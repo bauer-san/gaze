@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest numpy
+
+      - name: Install test + lint deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest numpy black ruff flake8
+
+      - name: Run linters (black, ruff, flake8)
+        run: |
+          black --check .
+          ruff check .
+          flake8 .
+
+      - name: Run tests
+        run: |
+          python -m pytest -q

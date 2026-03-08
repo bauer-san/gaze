@@ -1,0 +1,16 @@
+[tool.black]
+line-length = 88
+exclude = '''
+/(archive|\.git|\.venv|venv)/
+'''
+
+[tool.ruff]
+line-length = 88
+exclude = ["archive", ".git", "__pycache__"]
+
+[tool.flake8]
+max-line-length = 88
+exclude = ["archive", ".git", "__pycache__", "venv", ".venv"]
+
+[tool.isort]
+profile = "black"
