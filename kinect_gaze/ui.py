@@ -16,7 +16,14 @@ except Exception:
     mp = None
 
 
-def run_monitor(source: str = "webcam"):
+def run_monitor(
+    source: str = "webcam",
+    screen_w: int = 1280,
+    screen_h: int = 720,
+    filter_alpha: float = 0.12,
+    fullscreen: bool = False,
+    debug: bool = False,
+):
     if mp is None:
         raise RuntimeError(
             "mediapipe is required to run the monitor: pip install mediapipe"
@@ -28,14 +35,17 @@ def run_monitor(source: str = "webcam"):
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
 
-    filter_x = GazeFilter(alpha=0.12)
-    filter_y = GazeFilter(alpha=0.12)
+    filter_x = GazeFilter(alpha=filter_alpha)
+    filter_y = GazeFilter(alpha=filter_alpha)
     calibrator = GazeCalibrator()
 
     dx_min = dx_max = dy_min = dy_max = 0.0
     is_calibrated = False
 
-    cv2.namedWindow("GazeDemo", cv2.WINDOW_NORMAL)
+    win_name = "GazeDemo"
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+    if fullscreen:
+        cv2.setWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
     try:
         while True:
@@ -68,7 +78,7 @@ def run_monitor(source: str = "webcam"):
                 current_dx = filter_x.apply(raw_dx)
                 current_dy = filter_y.apply(raw_dy)
 
-            display = np.zeros((720, 1280, 3), dtype=np.uint8)
+            display = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
 
             if not is_calibrated:
                 target_names = ["Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right"]
@@ -77,7 +87,7 @@ def run_monitor(source: str = "webcam"):
                 cv2.putText(
                     display,
                     f"Look at {target_names[idx]} and press 'c'",
-                    (200, 350),
+                    (int(screen_w * 0.15), int(screen_h * 0.48)),
                     1,
                     2,
                     (255, 255, 255),
@@ -103,7 +113,10 @@ def run_monitor(source: str = "webcam"):
                 sy = map_val(comp_dy, dy_min, dy_max, display.shape[0])
                 cv2.circle(display, (sx, sy), 20, (0, 0, 255), -1)
 
-            cv2.imshow("GazeDemo", display)
+            if debug:
+                cv2.putText(display, f"Z: {current_z:.2f}", (10, 30), 1, 1, (0, 255, 0), 1)
+
+            cv2.imshow(win_name, display)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("c") and not is_calibrated and not calibrator.is_collecting:
                 calibrator.start_collection()
@@ -112,7 +125,7 @@ def run_monitor(source: str = "webcam"):
                 if status == "FINISHED":
                     ok, msg = calibrator.validate_and_save()
                     if not ok:
-                        cv2.putText(display, msg, (200, 400), 1, 1, (0, 0, 255), 2)
+                        cv2.putText(display, msg, (int(screen_w * 0.15), int(screen_h * 0.55)), 1, 1, (0, 0, 255), 2)
                     if calibrator.is_finished():
                         bounds = calibrator.finalize_bounds()
                         dx_min = bounds["dx_min"]
