@@ -1,0 +1,9 @@
+## Example configuration for demo.py
+# Values here are used as defaults. CLI flags override these values.
+
+source: webcam         # 'webcam' or 'kinect'
+screen_w: 1280         # virtual screen width for calibration mapping
+screen_h: 720          # virtual screen height for calibration mapping
+filter_alpha: 0.12     # smoothing alpha for gaze filter (0-1)
+fullscreen: false      # start display in fullscreen
+debug: false           # enable debug overlay
