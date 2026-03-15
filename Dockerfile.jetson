@@ -1,0 +1,20 @@
+# Example Dockerfile for Jetson (adjust `L4T_TAG` for your JetPack/L4T version)
+FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth1.13-py3
+
+# Install system packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-opencv \
+    gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    v4l-utils ca-certificates git && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Copy project
+COPY . /workspace
+
+# Install Python deps (prefer requirements-jetson guidance)
+RUN python3 -m pip install --upgrade pip setuptools wheel && \
+    python3 -m pip install -r requirements.txt || true
+
+CMD ["python3", "demo.py", "--config", "config.example.yaml"]

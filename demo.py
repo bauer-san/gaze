@@ -19,7 +19,17 @@ def load_config(path: pathlib.Path) -> Dict[str, Any]:
 def main():
     parser = argparse.ArgumentParser(description="Run gaze demo")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to YAML config")
-    parser.add_argument("--source", choices=["webcam", "kinect"], default=None, help="Input source")
+    parser.add_argument(
+        "--source",
+        type=str,
+        default=None,
+        help=(
+            "Input source. Examples: 'webcam', 'kinect', 'gstreamer', 'jetson', or "
+            "a GStreamer pipeline prefixed with 'gst:'. When omitted, config or 'webcam' is used."
+        ),
+    )
+    parser.add_argument("--gst-width", type=int, default=None, help="GStreamer pipeline width")
+    parser.add_argument("--gst-height", type=int, default=None, help="GStreamer pipeline height")
     parser.add_argument("--width", type=int, default=None, help="Virtual screen width for calibration mapping")
     parser.add_argument("--height", type=int, default=None, help="Virtual screen height for calibration mapping")
     parser.add_argument("--alpha", type=float, default=None, help="Smoothing alpha for gaze filter (0-1)")
