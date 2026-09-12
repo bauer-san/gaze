@@ -70,6 +70,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="No window; annunciate through the log. Needs a stored calibration.",
     )
     display.add_argument(
+        "--tui",
+        action="store_true",
+        default=None,
+        help=(
+            "No window; calibrate and monitor from the terminal. Works over "
+            "ssh, and unlike --headless it can run the calibration."
+        ),
+    )
+    display.add_argument(
         "--debug", action="store_true", default=None, help="Verbose logs and overlays"
     )
 
@@ -149,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
                 "screen_h",
                 "fullscreen",
                 "headless",
+                "tui",
                 "debug",
                 "filter_alpha",
                 "warn_after",

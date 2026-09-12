@@ -18,7 +18,7 @@ Ubuntu 22.04, Python 3.10.12, on 2026-09-12:
 | 1. Imports and backends | **pass** |
 | 2. Camera | **pass** — D435i, fw 5.17.0.10, USB 3.2, 26.1 fps through `RealSenseSource` |
 | 3. Test suite | **pass** — 103 passed, 0 skipped |
-| 4. Calibration round trip | **not run** — needs an operator at the screen |
+| 4. Calibration round trip | **not run** — needs an operator; no display required, see `--tui` |
 | 5. Escalation, by hand | **not run** — needs an operator in front of the camera |
 | 6. Performance capture | **partial** — 22.8 fps end to end measured; no `tegrastats` capture |
 
@@ -35,8 +35,11 @@ were silent failures rather than obvious ones:
   `/dev`.
 
 What is left needs a person, not just hardware: §4 and §5 are both operator
-procedures. Row 5's "step back a metre" check remains the only confirmation
-that depth compensation is applied in the right direction.
+procedures. Neither needs a display any more — `--tui` runs the corner prompts
+and a live status line in the terminal, so both can be done over ssh; they
+still need someone in front of the camera. Row 5's "step back a metre" check
+remains the only confirmation that depth compensation is applied in the right
+direction.
 
 The image itself has not been run on the board — CI builds and publishes it,
 and nothing here has exercised it. Everything in §2 was verified against the
@@ -143,10 +146,13 @@ python -m pytest -q
 The part CI cannot reach at all.
 
 ```bash
-python3 demo.py --recalibrate --config config.example.yaml   # mark four corners
-python3 demo.py --headless --config config.example.yaml      # must reuse it
+python3 demo.py --tui --recalibrate --config config.example.yaml  # four corners
+python3 demo.py --headless --config config.example.yaml           # must reuse it
 cat "${GAZE_CALIBRATION_FILE:-$HOME/.local/share/gaze_monitor/calibration.json}"
 ```
+
+Drop `--tui` if you have a display attached. Either way the corners are the
+machine's, not the screen's.
 
 Check that the stored `calib_z` is roughly the operator's real distance from
 the camera in metres. A wildly wrong value means depth is not being read
@@ -154,7 +160,14 @@ correctly, and distance compensation will then work against you.
 
 ## 5. Escalation, by hand
 
-With the monitor running, confirm each transition and roughly its timing:
+With the monitor running, confirm each transition and roughly its timing.
+Over ssh, run it with `--tui`: the status line names the state and shows
+`away_seconds` live, which is easier to time against than log lines.
+
+```bash
+python3 demo.py --tui --source realsense --config config.example.yaml
+```
+
 
 | Action | Expected |
 | --- | --- |

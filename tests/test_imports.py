@@ -15,6 +15,7 @@ PURE_MODULES = [
     "gaze_monitor.calibration",
     "gaze_monitor.config",
     "gaze_monitor.gaze",
+    "gaze_monitor.terminal",
 ]
 
 

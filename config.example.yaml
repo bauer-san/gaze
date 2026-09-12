@@ -15,6 +15,9 @@ screen_w: 1280
 screen_h: 720
 fullscreen: false
 headless: false         # no window; annunciate through the log
+tui: false              # no window; prompts and a status line in the terminal.
+                        # Unlike headless it can run the calibration, so this
+                        # is the one to use over ssh.
 debug: false            # verbose logs, camera inset, zone coordinates
 
 # --- attention thresholds (seconds) ---------------------------------------

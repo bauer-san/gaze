@@ -193,12 +193,25 @@ publishes for that image.
 
 ## Running as an appliance
 
-Commission once with a display attached, then run headless:
+Commission once, then run headless. Over ssh, with no display anywhere:
 
 ```bash
 docker compose --profile jetson pull gaze-jetson
-docker compose --profile calibrate run --rm calibrate
+docker compose --profile calibrate-tui run --rm calibrate-tui
 docker compose --profile jetson up -d gaze-jetson
+```
+
+The calibration prompts appear in your terminal, one corner at a time; press
+`c` or Enter on each. The corners are the machine's, not the screen's, so
+nothing is lost by not having one. With the dev kit's HDMI output attached,
+`--profile calibrate` runs the same procedure in a window instead.
+
+To watch a running unit over ssh without a display, `--tui` gives a live
+status line instead of log lines:
+
+```bash
+docker compose run --rm -it gaze-jetson \
+    python3 demo.py --config config.example.yaml --source realsense --tui
 ```
 
 Calibration persists in the `gaze-calibration` volume. Headless mode refuses to

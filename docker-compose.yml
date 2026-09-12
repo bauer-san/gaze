@@ -88,7 +88,41 @@ services:
     # is quiet because nothing is wrong. Restart it, and watch the logs.
     restart: unless-stopped
 
-  # One-off commissioning run. Needs a display; on the Jetson that is the
+  # One-off commissioning run over ssh: prompts and a status line in the
+  # terminal, no display needed. `run` (not `up`) is required -- this wants a
+  # terminal, which is what tty/stdin_open below provide.
+  #
+  #     docker compose --profile calibrate-tui run --rm calibrate-tui
+  #
+  # The operator marks the four corners of the machine's danger area, not of
+  # any screen, so nothing is lost by not having one.
+  calibrate-tui:
+    profiles: ["calibrate-tui"]
+    image: ${GAZE_JETSON_IMAGE:-ghcr.io/bauer-san/gaze:jetson}
+    runtime: nvidia
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
+    volumes:
+      - /dev:/dev
+      - gaze-calibration:/var/lib/gaze_monitor
+    # Both are needed: the terminal UI refuses to start without a tty, rather
+    # than silently drawing a status line nobody can see or read keys nobody
+    # can send.
+    tty: true
+    stdin_open: true
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --recalibrate
+      - --tui
+    restart: "no"
+
+  # One-off commissioning run with a display; on the Jetson that is the
   # dev kit's own HDMI output.
   calibrate:
     profiles: ["calibrate"]

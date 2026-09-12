@@ -25,7 +25,7 @@ import time
 import cv2
 import numpy as np
 
-from .attention import AttentionMonitor, AttentionState
+from .attention import STATE_LABELS, AttentionMonitor, AttentionState
 from .calibration import (
     GazeCalibrator,
     load_calibration,
@@ -52,12 +52,6 @@ COLORS = {
 WHITE = (255, 255, 255)
 GREY = (140, 140, 140)
 
-STATE_LABELS = {
-    AttentionState.ATTENTIVE: "WATCHING BLADE",
-    AttentionState.WARNING: "EYES OFF BLADE",
-    AttentionState.ALERT: "ATTENTION LOST",
-    AttentionState.FAULT: "SENSOR FAULT",
-}
 
 # How long a calibration accept/reject message stays on screen.
 MESSAGE_SECONDS = 2.0
@@ -268,6 +262,115 @@ def _draw_preview(display, frame) -> None:
     cv2.rectangle(display, (x0 - 1, y0 - 1), (x0 + pw, y0 + ph), GREY, 1)
 
 
+class _WindowUI:
+    """The cv2 window: the original annunciator, and the only one with a
+    camera preview. Needs a display the operator can actually see."""
+
+    can_calibrate = True
+
+    def __init__(self, config: MonitorConfig) -> None:
+        self.config = config
+
+    def start(self) -> None:
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW_NAME, self.config.screen_w, self.config.screen_h)
+        if self.config.fullscreen:
+            cv2.setWindowProperty(
+                WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN
+            )
+
+    def render(
+        self,
+        *,
+        calibrating: bool,
+        calibrator,
+        status,
+        fps: float,
+        message: str = "",
+        message_visible: bool = False,
+        frame=None,
+    ) -> None:
+        config = self.config
+        display = np.zeros((config.screen_h, config.screen_w, 3), dtype=np.uint8)
+        # Preview first: it is background context, and drawing it last
+        # would cover the gaze marker exactly when the gaze is furthest
+        # out of the zone and most worth seeing.
+        if config.debug and frame is not None:
+            _draw_preview(display, frame)
+        if calibrating:
+            _draw_calibration(display, calibrator, message, message_visible)
+        else:
+            _draw_monitoring(display, status, config)
+            if message and message_visible:
+                cv2.putText(
+                    display,
+                    message,
+                    (int(config.screen_w * 0.12), int(config.screen_h * 0.9)),
+                    FONT,
+                    0.7,
+                    (80, 200, 80),
+                    2,
+                )
+        _draw_status_bar(display, status, fps, calibrating=calibrating)
+
+        # The single point at which anything reaches the screen.
+        cv2.imshow(WINDOW_NAME, display)
+
+    def poll(self) -> str | None:
+        # waitKey is also OpenCV's event pump, so this must be called every
+        # frame whether or not anyone is pressing anything.
+        key = cv2.waitKey(1) & 0xFF
+        if key in (ord("q"), 27):  # q or Esc
+            return "quit"
+        if key == ord("c"):
+            return "collect"
+        if key == ord("r"):
+            return "recalibrate"
+        return None
+
+    def closed(self) -> bool:
+        return cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1
+
+    def stop(self) -> None:
+        cv2.destroyAllWindows()
+
+
+class _LogUI:
+    """No display at all: the installed unit annunciates through the log.
+
+    It cannot calibrate, because calibration needs the operator to be told
+    which corner to look at and to say when they are on it.
+    """
+
+    can_calibrate = False
+
+    def start(self) -> None:
+        pass
+
+    def render(self, **_kwargs) -> None:
+        pass
+
+    def poll(self) -> str | None:
+        return None
+
+    def closed(self) -> bool:
+        return False
+
+    def stop(self) -> None:
+        pass
+
+
+def create_ui(config: MonitorConfig):
+    """Pick the annunciator. The loop does not care which it gets."""
+    if config.tui:
+        from .terminal import TerminalUI
+
+        return TerminalUI()
+    if config.headless:
+        return _LogUI()
+    return _WindowUI(config)
+
+
 def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     """Run until the operator quits. Returns a process exit code."""
     try:
@@ -277,6 +380,8 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
             "mediapipe is required: pip install -r requirements.txt"
         ) from exc
 
+    ui = create_ui(config)
+
     record = None if force_calibration else load_calibration(config.calibration_file)
     if record is not None:
         log.info(
@@ -285,11 +390,11 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
             record.created_utc or "unknown date",
             record.source,
         )
-    elif config.headless:
+    elif not ui.can_calibrate:
         raise RuntimeError(
             f"No stored calibration at {config.calibration_file} and headless mode "
-            "cannot run the calibration UI. Calibrate once with a display attached, "
-            "then mount that file into the container."
+            "cannot run the calibration UI. Calibrate once with --tui over ssh, or "
+            "with a display attached, then reuse the stored file."
         )
     else:
         log.info("No stored calibration; starting calibration.")
@@ -326,24 +431,19 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
         min_tracking_confidence=0.5,
     )
 
-    if not config.headless:
-        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(WINDOW_NAME, config.screen_w, config.screen_h)
-        if config.fullscreen:
-            cv2.setWindowProperty(
-                WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN
-            )
-
     message = ""
     message_until = 0.0
     failures = 0
     frame_times: collections.deque[float] = collections.deque(maxlen=30)
     last_tick = time.monotonic()
 
+    ui.start()
+
     try:
         cam.start()
     except CameraError as exc:
         log.error("%s", exc)
+        ui.stop()
         return 2
 
     try:
@@ -407,43 +507,25 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
             else:
                 status = monitor.update(now, sample, camera_ok=camera_ok)
 
-            if config.headless:
-                continue
+            ui.render(
+                calibrating=calibrating,
+                calibrator=calibrator,
+                status=status,
+                fps=fps,
+                message=message,
+                message_visible=now < message_until,
+                frame=captured.color if captured is not None else None,
+            )
 
-            display = np.zeros((config.screen_h, config.screen_w, 3), dtype=np.uint8)
-            # Preview first: it is background context, and drawing it last
-            # would cover the gaze marker exactly when the gaze is furthest
-            # out of the zone and most worth seeing.
-            if config.debug and captured is not None:
-                _draw_preview(display, captured.color)
-            if calibrating:
-                _draw_calibration(display, calibrator, message, now < message_until)
-            else:
-                _draw_monitoring(display, status, config)
-                if message and now < message_until:
-                    cv2.putText(
-                        display,
-                        message,
-                        (int(config.screen_w * 0.12), int(config.screen_h * 0.9)),
-                        FONT,
-                        0.7,
-                        (80, 200, 80),
-                        2,
-                    )
-            _draw_status_bar(display, status, fps, calibrating=calibrating)
-
-            # The single point at which anything reaches the screen.
-            cv2.imshow(WINDOW_NAME, display)
-
-            if cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
+            if ui.closed():
                 break
 
-            key = cv2.waitKey(1) & 0xFF
-            if key in (ord("q"), 27):  # q or Esc
+            command = ui.poll()
+            if command == "quit":
                 break
-            if key == ord("c") and calibrating and not calibrator.is_collecting:
+            if command == "collect" and calibrating and not calibrator.is_collecting:
                 calibrator.start_collection(now)
-            if key == ord("r"):
+            if command == "recalibrate":
                 log.info("Recalibration requested")
                 calibrator.reset()
                 monitor.zone = None
@@ -457,7 +539,6 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     finally:
         cam.stop()
         face_mesh.close()
-        if not config.headless:
-            cv2.destroyAllWindows()
+        ui.stop()
 
     return 0

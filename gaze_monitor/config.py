@@ -44,6 +44,9 @@ class MonitorConfig:
     screen_h: int = 720
     fullscreen: bool = False
     headless: bool = False
+    # Calibration prompts and a live status line in the terminal, for
+    # commissioning and running a unit over ssh. See gaze_monitor.terminal.
+    tui: bool = False
     debug: bool = False
 
     # -- gaze --
@@ -89,6 +92,14 @@ class MonitorConfig:
             raise ConfigError("screen_w and screen_h must be positive")
         if self.headless and self.fullscreen:
             raise ConfigError("fullscreen makes no sense with headless")
+        if self.tui and self.fullscreen:
+            raise ConfigError("fullscreen makes no sense with tui")
+        if self.tui and self.headless:
+            raise ConfigError(
+                "tui and headless are different annunciators; pick one. "
+                "headless logs and cannot calibrate; tui draws a status line "
+                "in the terminal and can."
+            )
 
 
 def load_config_file(path: pathlib.Path) -> dict[str, Any]:

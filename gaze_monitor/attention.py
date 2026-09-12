@@ -43,6 +43,17 @@ class AttentionState(str, Enum):
         return self in (AttentionState.ALERT, AttentionState.FAULT)
 
 
+# What the operator is told, for each state. Lives here rather than in a UI
+# module so that every annunciator -- window, terminal, log -- says the same
+# words, and so the terminal UI can read them without importing OpenCV.
+STATE_LABELS = {
+    AttentionState.ATTENTIVE: "WATCHING BLADE",
+    AttentionState.WARNING: "EYES OFF BLADE",
+    AttentionState.ALERT: "ATTENTION LOST",
+    AttentionState.FAULT: "SENSOR FAULT",
+}
+
+
 @dataclass(frozen=True)
 class AttentionZone:
     """The calibrated attention area, in normalised iris-displacement units.

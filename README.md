@@ -61,11 +61,36 @@ to be watched and press `c`; the fixation is rejected if you were not holding
 still, or if too few frames saw your eyes. After the fourth corner the
 calibration is written to disk and reused on every subsequent start.
 
+The corners are the corners of the **machine's danger area**, not of the
+screen. The window is a prompt and a progress indicator, which is why the
+whole procedure also works from a terminal.
+
 | Key | |
 | --- | --- |
-| `c` | Capture the highlighted corner |
+| `c` / Enter | Capture the highlighted corner |
 | `r` | Start over |
 | `q` / `Esc` | Quit |
+
+### Over ssh
+
+An installed unit has no display, and neither does an ssh session. `--tui`
+runs the same two phases — corner prompts, then a live status line — in the
+terminal:
+
+```bash
+python3 demo.py --tui --recalibrate --config config.example.yaml
+python3 demo.py --tui --config config.example.yaml
+```
+
+`--headless` is the third option and a different thing: it draws nothing at
+all and annunciates purely through the log, which is right for an installed
+unit but cannot calibrate, because calibration needs to tell the operator
+which corner to look at and to hear back when they are on it. Pick one of the
+three; the config rejects combinations that contradict each other.
+
+`--tui` needs a real terminal. Under Docker that means `run -it`, or
+`tty: true` plus `stdin_open: true` in compose — it refuses to start
+otherwise rather than drawing a status line nobody can see.
 
 Calibration is stored at `~/.local/share/gaze_monitor/calibration.json`,
 overridable with `--calibration-file` or the `GAZE_CALIBRATION_FILE`
