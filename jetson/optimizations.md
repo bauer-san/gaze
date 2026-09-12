@@ -23,7 +23,7 @@ net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA_FP16)
 3) Prefer GStreamer pipelines for low-latency capture
 
 - Use `nvarguscamerasrc` for CSI cameras and `v4l2src` for USB devices.
-- Use `appsink` to feed frames into your OpenCV pipeline as in `kinect_gaze.capture`.
+- Use `appsink` to feed frames into your OpenCV pipeline as in `gaze_monitor.capture`.
 
 4) Reduce model input size and frame rate
 

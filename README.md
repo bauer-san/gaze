@@ -67,7 +67,7 @@ calibration is written to disk and reused on every subsequent start.
 | `r` | Start over |
 | `q` / `Esc` | Quit |
 
-Calibration is stored at `~/.local/share/kinect_gaze/calibration.json`,
+Calibration is stored at `~/.local/share/gaze_monitor/calibration.json`,
 overridable with `--calibration-file` or the `GAZE_CALIBRATION_FILE`
 environment variable (which is how the container reaches a mounted volume).
 
@@ -124,12 +124,12 @@ The thresholds worth thinking about for a given installation:
 
 | Module | |
 | --- | --- |
-| [`attention.py`](kinect_gaze/attention.py) | The attention area and the escalation state machine. Pure logic, injected time. |
-| [`calibration.py`](kinect_gaze/calibration.py) | Four-corner collection and the versioned on-disk record |
-| [`capture.py`](kinect_gaze/capture.py) | Camera backends. Normalises all depth to **metres** at the source. |
-| [`config.py`](kinect_gaze/config.py) | Defaults, YAML loading, CLI merge, validation |
-| [`gaze.py`](kinect_gaze/gaze.py) | Iris geometry and smoothing |
-| [`ui.py`](kinect_gaze/ui.py) | The run loop and rendering |
+| [`attention.py`](gaze_monitor/attention.py) | The attention area and the escalation state machine. Pure logic, injected time. |
+| [`calibration.py`](gaze_monitor/calibration.py) | Four-corner collection and the versioned on-disk record |
+| [`capture.py`](gaze_monitor/capture.py) | Camera backends. Normalises all depth to **metres** at the source. |
+| [`config.py`](gaze_monitor/config.py) | Defaults, YAML loading, CLI merge, validation |
+| [`gaze.py`](gaze_monitor/gaze.py) | Iris geometry and smoothing |
+| [`ui.py`](gaze_monitor/ui.py) | The run loop and rendering |
 
 `attention`, `calibration`, `config` and `gaze` import nothing heavier than
 numpy, so the logic that decides whether to alarm is tested without a camera,

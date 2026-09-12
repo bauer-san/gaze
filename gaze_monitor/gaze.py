@@ -1,7 +1,7 @@
 """Gaze geometry and smoothing.
 
 Unit convention for the whole package: **depth is always metres**, and 0.0
-means "no reading". Backends in :mod:`kinect_gaze.capture` convert from their
+means "no reading". Backends in :mod:`gaze_monitor.capture` convert from their
 native units once, at the source, so nothing here needs to know whether the
 frame came from a RealSense, a Kinect or a plain webcam.
 """

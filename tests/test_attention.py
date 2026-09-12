@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from kinect_gaze.attention import (
+from gaze_monitor.attention import (
     AttentionMonitor,
     AttentionState,
     AttentionZone,
@@ -16,7 +16,7 @@ from kinect_gaze.attention import (
 
 @dataclass
 class FakeGaze:
-    """Minimal stand-in for kinect_gaze.gaze.GazeSample."""
+    """Minimal stand-in for gaze_monitor.gaze.GazeSample."""
 
     dx: float
     dy: float

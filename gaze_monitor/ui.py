@@ -6,7 +6,7 @@ Two phases:
   fixates each corner of the attention area in turn and the result is written
   to disk.
 * **Monitoring** -- the steady state. Gaze is compared against the stored zone
-  and escalated by :class:`~kinect_gaze.attention.AttentionMonitor`.
+  and escalated by :class:`~gaze_monitor.attention.AttentionMonitor`.
 
 All drawing happens into an off-screen canvas which is shown exactly once per
 frame, at the bottom of the loop. The previous version called imshow in the

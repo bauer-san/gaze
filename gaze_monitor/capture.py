@@ -12,7 +12,7 @@ rest of the package never has to ask what kind of camera it is talking to.
 ``read()`` returns ``None`` for a *transient* failure (a dropped frame, a
 timed-out wait) and raises for a *terminal* one (device disconnected). Callers
 are expected to tolerate a run of ``None`` and then declare a fault -- see
-:class:`kinect_gaze.attention.AttentionMonitor`.
+:class:`gaze_monitor.attention.AttentionMonitor`.
 """
 
 from __future__ import annotations

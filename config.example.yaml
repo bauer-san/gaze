@@ -43,4 +43,4 @@ filter_alpha: 0.12
 # start. Redo with --recalibrate, discard with --factory-reset.
 sample_duration: 1.0    # seconds of fixation per corner
 sigma_threshold: 0.05   # reject a corner that wobbles more than this
-# calibration_file: /var/lib/kinect_gaze/calibration.json
+# calibration_file: /var/lib/gaze_monitor/calibration.json

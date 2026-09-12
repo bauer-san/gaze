@@ -12,7 +12,7 @@ python3 -c "import cv2, numpy, yaml; print('cv2', cv2.__version__)"
 # pyrealsense2 exposes no __version__; constructing a context is the real check.
 python3 -c "import pyrealsense2 as rs; rs.context(); print('pyrealsense2 ok')"
 python3 -c "import mediapipe; print('mediapipe', mediapipe.__version__)"
-python3 -c "from kinect_gaze import capture; print('capture ok')"
+python3 -c "from gaze_monitor import capture; print('capture ok')"
 ```
 
 GStreamer support in the OpenCV build (needed for the `jetson` and `gst:`
@@ -54,7 +54,7 @@ The part CI cannot reach at all.
 ```bash
 python3 demo.py --recalibrate --config config.example.yaml   # mark four corners
 python3 demo.py --headless --config config.example.yaml      # must reuse it
-cat "${GAZE_CALIBRATION_FILE:-$HOME/.local/share/kinect_gaze/calibration.json}"
+cat "${GAZE_CALIBRATION_FILE:-$HOME/.local/share/gaze_monitor/calibration.json}"
 ```
 
 Check that the stored `calib_z` is roughly the operator's real distance from

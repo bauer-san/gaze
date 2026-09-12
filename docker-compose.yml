@@ -30,15 +30,15 @@ services:
     build:
       context: .
       target: desktop
-    image: kinect-gaze:desktop
+    image: gaze-monitor:desktop
     <<: *realsense-device-access
     environment:
-      GAZE_CALIBRATION_FILE: /var/lib/kinect_gaze/calibration.json
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
       DISPLAY: ${DISPLAY:-:0}
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
-      - gaze-calibration:/var/lib/kinect_gaze
+      - gaze-calibration:/var/lib/gaze_monitor
     command:
       - python3
       - demo.py
@@ -57,15 +57,15 @@ services:
       args:
         L4T_TAG: ${L4T_TAG:-r36.4.0}
         MEDIAPIPE_WHEEL: ${MEDIAPIPE_WHEEL:-}
-    image: kinect-gaze:jetson
+    image: gaze-monitor:jetson
     # Requires the NVIDIA container runtime from JetPack.
     runtime: nvidia
     <<: *realsense-device-access
     environment:
-      GAZE_CALIBRATION_FILE: /var/lib/kinect_gaze/calibration.json
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     volumes:
       - /dev/bus/usb:/dev/bus/usb
-      - gaze-calibration:/var/lib/kinect_gaze
+      - gaze-calibration:/var/lib/gaze_monitor
     command:
       - python3
       - demo.py
@@ -82,16 +82,16 @@ services:
   # dev kit's own HDMI output.
   calibrate:
     profiles: ["calibrate"]
-    image: kinect-gaze:jetson
+    image: gaze-monitor:jetson
     runtime: nvidia
     <<: *realsense-device-access
     environment:
-      GAZE_CALIBRATION_FILE: /var/lib/kinect_gaze/calibration.json
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
       DISPLAY: ${DISPLAY:-:0}
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
-      - gaze-calibration:/var/lib/kinect_gaze
+      - gaze-calibration:/var/lib/gaze_monitor
     command:
       - python3
       - demo.py

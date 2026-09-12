@@ -64,7 +64,7 @@ sudo apt install -y python3-opencv
 The apt build is compiled for this architecture and, importantly, has
 GStreamer support — which the PyPI wheels do not. Without it the `jetson` and
 `gst:` camera sources cannot open a pipeline, and
-[`capture.py`](../kinect_gaze/capture.py) will say so explicitly rather than
+[`capture.py`](../gaze_monitor/capture.py) will say so explicitly rather than
 failing obscurely.
 
 Do not install `opencv-python` or `opencv-contrib-python` alongside it: two
@@ -79,7 +79,7 @@ python3 demo.py --source realsense --config config.example.yaml
 ```
 
 For a CSI camera, `--source jetson` builds an `nvarguscamerasrc` pipeline
-(see `jetson_csi_pipeline` in [`capture.py`](../kinect_gaze/capture.py)).
+(see `jetson_csi_pipeline` in [`capture.py`](../gaze_monitor/capture.py)).
 `--device N` selects the sensor id. There is no depth from a CSI camera, so
 distance compensation is off. For anything else, pass a pipeline directly:
 

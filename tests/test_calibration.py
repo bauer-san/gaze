@@ -8,8 +8,8 @@ import json
 
 import pytest
 
-from kinect_gaze.attention import CORNER_NAMES, AttentionZone
-from kinect_gaze.calibration import (
+from gaze_monitor.attention import CORNER_NAMES, AttentionZone
+from gaze_monitor.calibration import (
     CALIBRATION_ENV_VAR,
     CALIBRATION_VERSION,
     CalibrationRecord,
@@ -243,4 +243,4 @@ def test_env_var_overrides_default_path(monkeypatch, tmp_path):
 def test_default_path_follows_xdg(monkeypatch, tmp_path):
     monkeypatch.delenv(CALIBRATION_ENV_VAR, raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    assert default_calibration_path() == tmp_path / "kinect_gaze" / "calibration.json"
+    assert default_calibration_path() == tmp_path / "gaze_monitor" / "calibration.json"

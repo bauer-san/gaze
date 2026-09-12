@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kinect-gaze"
-version = "0.2.0"
+name = "gaze-monitor"
+version = "0.3.0"
 description = "Camera-based operator attention monitor for machinery danger zones"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,7 +26,7 @@ realsense = ["pyrealsense2>=2.55"]
 gaze-demo = "demo:main"
 
 [tool.setuptools]
-packages = ["kinect_gaze"]
+packages = ["gaze_monitor"]
 # demo.py is a top-level module, not part of the package. Without this it
 # is left out of the wheel and the gaze-demo entry point above points at
 # nothing.

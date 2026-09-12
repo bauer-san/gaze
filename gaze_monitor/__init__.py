@@ -5,6 +5,6 @@ the pure-logic modules (attention, calibration, config, gaze) can be imported
 and tested without OpenCV or MediaPipe present.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = ["attention", "calibration", "capture", "config", "gaze", "ui"]

@@ -13,8 +13,8 @@ import logging
 import pathlib
 import sys
 
-from kinect_gaze.calibration import default_calibration_path, factory_reset
-from kinect_gaze.config import (
+from gaze_monitor.calibration import default_calibration_path, factory_reset
+from gaze_monitor.config import (
     SOURCE_NAMES,
     ConfigError,
     build_config,
@@ -173,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Imported here, not at module scope: --help and --factory-reset are
     # useful on a box that has no OpenCV/MediaPipe stack installed.
-    from kinect_gaze import ui
+    from gaze_monitor import ui
 
     try:
         return ui.run_monitor(config, force_calibration=args.recalibrate)

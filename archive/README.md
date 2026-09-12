@@ -4,7 +4,7 @@ Exploratory scripts kept for reference. **None of these run as part of the
 project** and none are linted or tested — `pyproject.toml`, `.flake8` and CI
 all exclude this directory.
 
-The working code lives in [`kinect_gaze/`](../kinect_gaze/) and is run through
+The working code lives in [`gaze_monitor/`](../gaze_monitor/) and is run through
 [`demo.py`](../demo.py).
 
 ## Why they are still here
@@ -25,7 +25,7 @@ often in one of these.
 `11test.py` is the notable one. The escalation behaviour it prototyped was
 dropped in the refactor that created the package, and has since been
 reimplemented — with hysteresis, a fault state and tests — in
-[`kinect_gaze/attention.py`](../kinect_gaze/attention.py).
+[`gaze_monitor/attention.py`](../gaze_monitor/attention.py).
 
 ## If you want to salvage something
 

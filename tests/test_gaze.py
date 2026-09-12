@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from kinect_gaze.gaze import (
+from gaze_monitor.gaze import (
     LEFT_EYE_INNER,
     LEFT_EYE_OUTER,
     LEFT_IRIS,

@@ -10,11 +10,11 @@ import importlib
 import pytest
 
 PURE_MODULES = [
-    "kinect_gaze",
-    "kinect_gaze.attention",
-    "kinect_gaze.calibration",
-    "kinect_gaze.config",
-    "kinect_gaze.gaze",
+    "gaze_monitor",
+    "gaze_monitor.attention",
+    "gaze_monitor.calibration",
+    "gaze_monitor.config",
+    "gaze_monitor.gaze",
 ]
 
 
@@ -31,7 +31,7 @@ def test_demo_cli_builds_without_opencv():
     assert args.factory_reset is False
 
 
-@pytest.mark.parametrize("name", ["kinect_gaze.capture", "kinect_gaze.ui"])
+@pytest.mark.parametrize("name", ["gaze_monitor.capture", "gaze_monitor.ui"])
 def test_vision_modules_import_when_stack_present(name):
     pytest.importorskip("cv2")
     assert importlib.import_module(name)
@@ -40,8 +40,8 @@ def test_vision_modules_import_when_stack_present(name):
 def test_every_source_name_builds_a_backend():
     """A name offered by the CLI must be one create_source can actually build."""
     pytest.importorskip("cv2")
-    capture = importlib.import_module("kinect_gaze.capture")
-    from kinect_gaze.config import SOURCE_NAMES
+    capture = importlib.import_module("gaze_monitor.capture")
+    from gaze_monitor.config import SOURCE_NAMES
 
     for name in SOURCE_NAMES:
         source = capture.create_source(name)
@@ -53,7 +53,7 @@ def test_every_source_name_builds_a_backend():
 
 def test_unknown_source_raises():
     pytest.importorskip("cv2")
-    capture = importlib.import_module("kinect_gaze.capture")
+    capture = importlib.import_module("gaze_monitor.capture")
     with pytest.raises(capture.UnknownSourceError):
         capture.create_source("not-a-camera")
 
@@ -61,6 +61,6 @@ def test_unknown_source_raises():
 def test_gstreamer_support_detection_returns_bool():
     """Parsed out of cv2.getBuildInformation(), whose column widths vary."""
     pytest.importorskip("cv2")
-    from kinect_gaze.capture import has_gstreamer_support
+    from gaze_monitor.capture import has_gstreamer_support
 
     assert isinstance(has_gstreamer_support(), bool)

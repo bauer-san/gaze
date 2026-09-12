@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from kinect_gaze.config import (
+from gaze_monitor.config import (
     ConfigError,
     MonitorConfig,
     build_config,

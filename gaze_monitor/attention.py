@@ -202,7 +202,7 @@ class AttentionMonitor:
     ) -> AttentionStatus:
         """Advance the state machine by one frame.
 
-        ``gaze`` is a :class:`kinect_gaze.gaze.GazeSample` or ``None`` when the
+        ``gaze`` is a :class:`gaze_monitor.gaze.GazeSample` or ``None`` when the
         operator's eyes were not measurable this frame. Not measurable counts
         as looking away: from a single camera, "turned away from the blade" and
         "not tracking" are the same observation, and the safe reading is the

@@ -21,7 +21,7 @@ FROM python:3.11-slim AS desktop
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    GAZE_CALIBRATION_FILE=/var/lib/kinect_gaze/calibration.json
+    GAZE_CALIBRATION_FILE=/var/lib/gaze_monitor/calibration.json
 
 # OpenCV's runtime libraries. libgl1/libglib2.0-0 are needed even to import
 # cv2; the rest are needed for imshow during calibration.
@@ -43,8 +43,8 @@ RUN python3 -m pip install --upgrade pip \
 
 COPY . .
 
-RUN mkdir -p /var/lib/kinect_gaze
-VOLUME ["/var/lib/kinect_gaze"]
+RUN mkdir -p /var/lib/gaze_monitor
+VOLUME ["/var/lib/gaze_monitor"]
 
 CMD ["python3", "demo.py", "--config", "config.example.yaml"]
 
@@ -54,7 +54,7 @@ FROM nvcr.io/nvidia/l4t-jetpack:${L4T_TAG} AS jetson
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DEBIAN_FRONTEND=noninteractive \
-    GAZE_CALIBRATION_FILE=/var/lib/kinect_gaze/calibration.json
+    GAZE_CALIBRATION_FILE=/var/lib/gaze_monitor/calibration.json
 
 # python3-opencv from apt, never the PyPI wheel: the distribution build is the
 # one with GStreamer (so the jetson/CSI camera sources work) and is built for
@@ -121,8 +121,8 @@ RUN python3 -m pip install --no-cache-dir "PyYAML>=6.0"
 WORKDIR /app
 COPY . .
 
-RUN mkdir -p /var/lib/kinect_gaze
-VOLUME ["/var/lib/kinect_gaze"]
+RUN mkdir -p /var/lib/gaze_monitor
+VOLUME ["/var/lib/gaze_monitor"]
 
 # Headless by default: an installed unit has no monitor. Calibration is a
 # separate, one-off run with a display attached (see docker-compose.yml).

@@ -2,7 +2,7 @@
 
 The operator looks at each corner of the region they must watch -- the blade
 and the cut around it -- and the mean iris displacement at each corner becomes
-one edge of an :class:`~kinect_gaze.attention.AttentionZone`.
+one edge of an :class:`~gaze_monitor.attention.AttentionZone`.
 
 This is a commissioning step, not a per-session one: it is done once when the
 machine is installed and then loaded from disk on every start, until someone
@@ -41,7 +41,7 @@ def default_calibration_path() -> pathlib.Path:
     if override:
         return pathlib.Path(override).expanduser()
     base = os.environ.get("XDG_DATA_HOME") or "~/.local/share"
-    return pathlib.Path(base).expanduser() / "kinect_gaze" / "calibration.json"
+    return pathlib.Path(base).expanduser() / "gaze_monitor" / "calibration.json"
 
 
 @dataclass(frozen=True)
