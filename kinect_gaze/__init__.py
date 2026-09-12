@@ -1,3 +1,10 @@
-"""kinect_gaze package - modular helpers for gaze demo"""
+"""Camera-based operator attention monitoring for machinery danger zones.
 
-__all__ = ["capture", "gaze", "calibration", "ui"]
+Submodules are imported lazily by name rather than re-exported here, so that
+the pure-logic modules (attention, calibration, config, gaze) can be imported
+and tested without OpenCV or MediaPipe present.
+"""
+
+__version__ = "0.2.0"
+
+__all__ = ["attention", "calibration", "capture", "config", "gaze", "ui"]

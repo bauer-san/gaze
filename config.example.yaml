@@ -1,9 +1,46 @@
-## Example configuration for demo.py
-# Values here are used as defaults. CLI flags override these values.
+# Example configuration. Copy to config.yaml and edit; CLI flags override these.
+#
+#   python3 demo.py --config config.yaml
 
-source: webcam         # 'webcam' or 'kinect'
-screen_w: 1280         # virtual screen width for calibration mapping
-screen_h: 720          # virtual screen height for calibration mapping
-filter_alpha: 0.12     # smoothing alpha for gaze filter (0-1)
-fullscreen: false      # start display in fullscreen
-debug: false           # enable debug overlay
+# --- camera ---------------------------------------------------------------
+source: realsense       # realsense | webcam | kinect | jetson | gst:<pipeline>
+device: 0               # V4L2/CSI index (webcam and jetson sources)
+# serial:               # pin a specific RealSense by serial number
+camera_width: 640
+camera_height: 480
+fps: 30
+
+# --- display --------------------------------------------------------------
+screen_w: 1280
+screen_h: 720
+fullscreen: false
+headless: false         # no window; annunciate through the log
+debug: false            # verbose logs, camera inset, zone coordinates
+
+# --- attention thresholds (seconds) ---------------------------------------
+# Glancing at the feed table is normal, so there is a grace period before
+# warning. alert_after is the point at which the operator is treated as having
+# genuinely lost track of the blade.
+warn_after: 1.0
+alert_after: 3.0
+
+# The gaze must be continuously back inside the area for this long before an
+# alarm clears, so the state does not flicker at the zone edge.
+clear_after: 0.4
+
+# Unusable camera frames for this long is a fault. Faults alarm: a monitor
+# that goes quiet when it breaks is worse than no monitor.
+fault_after: 1.0
+
+# Tolerance around the calibrated area, as a fraction of its size.
+zone_margin: 0.1
+
+# Gaze smoothing (0-1]. Lower is steadier but slower to react.
+filter_alpha: 0.12
+
+# --- calibration ----------------------------------------------------------
+# Commissioning only: the four corners are captured once and reloaded on every
+# start. Redo with --recalibrate, discard with --factory-reset.
+sample_duration: 1.0    # seconds of fixation per corner
+sigma_threshold: 0.05   # reject a corner that wobbles more than this
+# calibration_file: /var/lib/kinect_gaze/calibration.json

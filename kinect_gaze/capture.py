@@ -24,6 +24,8 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from .config import GST_PREFIX, SOURCE_NAMES
+
 log = logging.getLogger(__name__)
 
 # Kinect v1 DEPTH_REGISTERED is millimetres aligned to the RGB camera.
@@ -318,9 +320,6 @@ def jetson_csi_pipeline(
     )
 
 
-SOURCE_NAMES = ("realsense", "webcam", "kinect", "jetson")
-
-
 def create_source(
     spec: str = "realsense",
     width: int = 640,
@@ -339,8 +338,8 @@ def create_source(
     """
     spec = (spec or "").strip()
 
-    if spec.startswith("gst:"):
-        return GStreamerSource(spec[len("gst:") :])
+    if spec.startswith(GST_PREFIX):
+        return GStreamerSource(spec[len(GST_PREFIX) :])
     if spec == "realsense":
         return RealSenseSource(width=width, height=height, fps=fps, serial=serial)
     if spec == "webcam":
@@ -354,5 +353,5 @@ def create_source(
 
     raise UnknownSourceError(
         f"Unknown camera source {spec!r}. Expected one of "
-        f"{', '.join(SOURCE_NAMES)}, or a 'gst:<pipeline>' string."
+        f"{', '.join(SOURCE_NAMES)}, or a '{GST_PREFIX}<pipeline>' string."
     )

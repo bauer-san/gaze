@@ -1,100 +1,186 @@
-"""Entry point to run the canonical gaze demo using the kinect_gaze package."""
+"""Entry point for the operator attention monitor.
+
+    python3 demo.py --config config.yaml
+
+Calibration happens automatically on first run and is then reused on every
+start. `--recalibrate` redoes it; `--factory-reset` discards it.
+"""
+
+from __future__ import annotations
 
 import argparse
+import logging
 import pathlib
-from typing import Any
+import sys
 
-import yaml
-
-from kinect_gaze import ui
-
-
-def load_config(path: pathlib.Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+from kinect_gaze.calibration import default_calibration_path, factory_reset
+from kinect_gaze.config import (
+    SOURCE_NAMES,
+    ConfigError,
+    build_config,
+    load_config_file,
+)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Run gaze demo")
-    parser.add_argument(
-        "--config", type=str, default="config.yaml", help="Path to YAML config"
-    )
-    parser.add_argument(
-        "--source",
-        type=str,
-        default=None,
-        help=(
-            "Input source. Examples: 'webcam', 'kinect', 'gstreamer', 'jetson', or "
-            "a GStreamer pipeline prefixed with 'gst:'. When omitted, "
-            "config or 'webcam' is used."
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Alert an operator when their attention leaves the blade area.",
+        epilog=(
+            "Unset flags fall back to the config file, then to built-in "
+            "defaults; see config.example.yaml for the values and what they mean."
         ),
     )
     parser.add_argument(
-        "--gst-width", type=int, default=None, help="GStreamer pipeline width"
+        "--config",
+        type=pathlib.Path,
+        default=pathlib.Path("config.yaml"),
+        help="YAML config file; CLI flags take precedence over its values",
     )
-    parser.add_argument(
-        "--gst-height", type=int, default=None, help="GStreamer pipeline height"
-    )
-    parser.add_argument(
-        "--width",
-        type=int,
+
+    camera = parser.add_argument_group("camera")
+    camera.add_argument(
+        "--source",
         default=None,
-        help="Virtual screen width for calibration mapping",
+        help=(
+            "Camera backend: "
+            + ", ".join(SOURCE_NAMES)
+            + ", or 'gst:<pipeline>' for a raw GStreamer pipeline"
+        ),
     )
-    parser.add_argument(
-        "--height",
-        type=int,
+    camera.add_argument(
+        "--device", type=int, default=None, help="V4L2/CSI device index"
+    )
+    camera.add_argument("--serial", default=None, help="RealSense serial number")
+    camera.add_argument("--camera-width", type=int, default=None, help="Capture width")
+    camera.add_argument(
+        "--camera-height", type=int, default=None, help="Capture height"
+    )
+    camera.add_argument("--fps", type=int, default=None, help="Capture frame rate")
+
+    display = parser.add_argument_group("display")
+    display.add_argument("--width", dest="screen_w", type=int, default=None)
+    display.add_argument("--height", dest="screen_h", type=int, default=None)
+    display.add_argument(
+        "--fullscreen", action="store_true", default=None, help="Start fullscreen"
+    )
+    display.add_argument(
+        "--headless",
+        action="store_true",
         default=None,
-        help="Virtual screen height for calibration mapping",
+        help="No window; annunciate through the log. Needs a stored calibration.",
     )
-    parser.add_argument(
-        "--alpha",
+    display.add_argument(
+        "--debug", action="store_true", default=None, help="Verbose logs and overlays"
+    )
+
+    attention = parser.add_argument_group("attention thresholds")
+    attention.add_argument(
+        "--warn-after", type=float, default=None, help="Seconds before warning"
+    )
+    attention.add_argument(
+        "--alert-after", type=float, default=None, help="Seconds before alerting"
+    )
+    attention.add_argument(
+        "--clear-after",
         type=float,
         default=None,
-        help="Smoothing alpha for gaze filter (0-1)",
+        help="Seconds back on target before an alarm clears",
     )
-    parser.add_argument(
-        "--fullscreen",
-        action="store_true",
+    attention.add_argument(
+        "--fault-after",
+        type=float,
         default=None,
-        help="Start display in fullscreen mode",
+        help="Seconds of unusable camera frames before declaring a fault",
     )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
+    attention.add_argument(
+        "--zone-margin",
+        type=float,
         default=None,
-        help="Enable debug logging/overlay",
+        help="Tolerance around the calibrated area, as a fraction of its size",
     )
-    args = parser.parse_args()
-
-    cfg_path = pathlib.Path(args.config)
-    cfg = load_config(cfg_path)
-
-    # Merge precedence: CLI args (if provided) > config file > defaults
-    source = args.source if args.source is not None else cfg.get("source", "webcam")
-    screen_w = args.width if args.width is not None else cfg.get("screen_w", 1280)
-    screen_h = args.height if args.height is not None else cfg.get("screen_h", 720)
-    filter_alpha = (
-        args.alpha if args.alpha is not None else cfg.get("filter_alpha", 0.12)
+    attention.add_argument(
+        "--alpha",
+        dest="filter_alpha",
+        type=float,
+        default=None,
+        help="Gaze smoothing factor (0-1]; lower is smoother but slower",
     )
 
-    # For booleans, argparse defaults to None above so we can detect omission
-    fullscreen = (
-        args.fullscreen if args.fullscreen is not None else cfg.get("fullscreen", False)
+    calib = parser.add_argument_group("calibration")
+    calib.add_argument(
+        "--calibration-file",
+        type=pathlib.Path,
+        default=None,
+        help=f"Calibration store (default: {default_calibration_path()})",
     )
-    debug = args.debug if args.debug is not None else cfg.get("debug", False)
+    calib.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="Redefine the attention area, overwriting the stored calibration",
+    )
+    calib.add_argument(
+        "--factory-reset",
+        action="store_true",
+        help="Delete the stored calibration and exit",
+    )
+    return parser
 
-    ui.run_monitor(
-        source=source,
-        screen_w=screen_w,
-        screen_h=screen_h,
-        filter_alpha=filter_alpha,
-        fullscreen=fullscreen,
-        debug=debug,
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
     )
+
+    try:
+        file_values = load_config_file(args.config)
+        cli_values = {
+            key: getattr(args, key)
+            for key in (
+                "source",
+                "device",
+                "serial",
+                "camera_width",
+                "camera_height",
+                "fps",
+                "screen_w",
+                "screen_h",
+                "fullscreen",
+                "headless",
+                "debug",
+                "filter_alpha",
+                "warn_after",
+                "alert_after",
+                "clear_after",
+                "fault_after",
+                "zone_margin",
+                "calibration_file",
+            )
+        }
+        config = build_config(file_values, cli_values)
+    except ConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.factory_reset:
+        if factory_reset(config.calibration_file):
+            print(f"Calibration cleared: {config.calibration_file}")
+        else:
+            print(f"No calibration to clear at {config.calibration_file}")
+        return 0
+
+    # Imported here, not at module scope: --help and --factory-reset are
+    # useful on a box that has no OpenCV/MediaPipe stack installed.
+    from kinect_gaze import ui
+
+    try:
+        return ui.run_monitor(config, force_calibration=args.recalibrate)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
