@@ -27,6 +27,10 @@ gaze-demo = "demo:main"
 
 [tool.setuptools]
 packages = ["kinect_gaze"]
+# demo.py is a top-level module, not part of the package. Without this it
+# is left out of the wheel and the gaze-demo entry point above points at
+# nothing.
+py-modules = ["demo"]
 
 [tool.black]
 line-length = 88
