@@ -34,6 +34,7 @@ from .calibration import (
 from .capture import CameraError, create_source
 from .config import MonitorConfig
 from .gaze import GazeFilter, gaze_from_landmarks
+from .quality import depth_is_blind
 
 log = logging.getLogger(__name__)
 
@@ -465,21 +466,33 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 time.sleep(FAILURE_BACKOFF_SECONDS)
             else:
                 failures = 0
-            camera_ok = failures < FAILURES_BEFORE_UNHEALTHY
 
             sample = None
+            blinded = False
             if captured is not None:
                 frame = captured.color
                 h, w = frame.shape[:2]
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 rgb.flags.writeable = False
                 results = face_mesh.process(rgb)
-                if results.multi_face_landmarks:
+                face_seen = bool(results.multi_face_landmarks)
+                if face_seen:
                     raw = gaze_from_landmarks(
                         results.multi_face_landmarks[0], w, h, captured.depth_m
                     )
                     if raw is not None:
                         sample = _smooth(raw, filter_x, filter_y)
+
+                # A covered lens still delivers frames at full rate, so read()
+                # cannot see it and the health timer never starts. No depth
+                # returns *and* no face is what being blinded looks like.
+                # Either alone is normal: a depth sensor can fail while colour
+                # still tracks a face, and an empty room has no face in it.
+                blinded = not face_seen and depth_is_blind(
+                    captured.depth_m, config.min_depth_fraction
+                )
+
+            camera_ok = failures < FAILURES_BEFORE_UNHEALTHY and not blinded
 
             if calibrating:
                 if calibrator.is_collecting:

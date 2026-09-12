@@ -57,6 +57,34 @@ at `away 1.0s` against `warn_after: 1.0`, alert at `away 3.0s` against
 the brief-glance-back hysteresis, `SENSOR FAULT` on a covered lens, and
 stepping back a metre.
 
+### The covered-lens row, and what it used to get wrong
+
+This row asked for `SENSOR FAULT` and the monitor gave `ATTENTION LOST`. The
+monitor was right and the row was wrong: `fault_after` counts *unusable
+frames*, and a covered lens produces perfectly good frames that merely have
+nothing in them. `read()` returned `None` zero times in 60 obstructed frames.
+Not being able to see the operator is treated as looking away, deliberately
+and pessimistically -- so the alarm did sound, just under the wrong name.
+
+A blocked-sensor check now closes that gap: no depth returns **and** no face
+counts as unusable and feeds the same `fault_after` timer. The conjunction is
+load-bearing. Depth alone would fault a camera whose depth sensor died while
+colour still tracked faces perfectly well, which is a working monitor, not a
+broken one. Cameras with no depth at all skip the check.
+
+Verified so far:
+
+* the two populations are far apart -- 88.3-98.1% valid depth with the lens
+  clear against 0.0-1.2% covered, measured over 90 and 60 frames;
+* the fault path fires on hardware, forced by running with the threshold
+  inverted (`--min-depth-fraction 0.99`), including recovery the instant a
+  face appears, which is the conjunction doing its job;
+* the thresholds are pinned in `tests/test_quality.py` against those numbers.
+
+**Not** verified: the shipping threshold of 0.05 against a real obstruction.
+That still wants a piece of paper and someone to hold it there, and it is the
+only part of this that hardware can settle.
+
 The image itself has not been run on the board — CI builds and publishes it,
 and nothing here has exercised it. Everything in §2 was verified against the
 host install, so the image inherits the dependency findings but not the proof.
@@ -191,7 +219,7 @@ python3 demo.py --tui --source realsense --config config.example.yaml
 | Look away, hold | amber at ~`warn_after`, red at ~`alert_after` |
 | Look back briefly, away again | stays red — hysteresis, does not flicker clear |
 | Look back and hold | clears after ~`clear_after` |
-| Cover the lens | `SENSOR FAULT` after ~`fault_after` |
+| Cover the lens | `SENSOR FAULT` after ~`fault_after` (untested at the shipping threshold) |
 | Step back a metre and repeat | zone edges hold (depth compensation) |
 
 The last row is the one worth being fussy about. The arithmetic has been

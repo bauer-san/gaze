@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from .calibration import default_calibration_path
+from .quality import MIN_DEPTH_FRACTION
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ class MonitorConfig:
     clear_after: float = 0.4
     fault_after: float = 1.0
     zone_margin: float = 0.1
+    # Fraction of depth pixels below which a depth camera is treated as
+    # blinded -- a covered lens keeps delivering frames, so nothing else
+    # notices. 0 disables the check. Only applies to cameras with depth.
+    min_depth_fraction: float = MIN_DEPTH_FRACTION
 
     # -- calibration --
     sample_duration: float = 1.0
@@ -88,6 +93,11 @@ class MonitorConfig:
             raise ConfigError("zone_margin must be >= 0")
         if self.sample_duration <= 0:
             raise ConfigError("sample_duration must be > 0")
+        if not 0.0 <= self.min_depth_fraction < 1.0:
+            raise ConfigError(
+                "min_depth_fraction must be in [0, 1), got "
+                f"{self.min_depth_fraction}"
+            )
         if min(self.screen_w, self.screen_h) <= 0:
             raise ConfigError("screen_w and screen_h must be positive")
         if self.headless and self.fullscreen:

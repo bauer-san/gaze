@@ -102,6 +102,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds of unusable camera frames before declaring a fault",
     )
     attention.add_argument(
+        "--min-depth-fraction",
+        type=float,
+        default=None,
+        help=(
+            "Fraction of depth pixels below which the camera is treated as "
+            "blinded (a covered lens still delivers frames); 0 disables"
+        ),
+    )
+    attention.add_argument(
         "--zone-margin",
         type=float,
         default=None,
@@ -166,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                 "clear_after",
                 "fault_after",
                 "zone_margin",
+                "min_depth_fraction",
                 "calibration_file",
             )
         }
