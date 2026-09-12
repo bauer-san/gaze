@@ -18,8 +18,8 @@ Ubuntu 22.04, Python 3.10.12, on 2026-09-12:
 | 1. Imports and backends | **pass** |
 | 2. Camera | **pass** — D435i, fw 5.17.0.10, USB 3.2, 26.1 fps through `RealSenseSource` |
 | 3. Test suite | **pass** — 103 passed, 0 skipped |
-| 4. Calibration round trip | **not run** — needs an operator; no display required, see `--tui` |
-| 5. Escalation, by hand | **not run** — needs an operator in front of the camera |
+| 4. Calibration round trip | **pass** — four corners accepted over ssh, `calib_z` 0.649 m |
+| 5. Escalation, by hand | **partial** — warn/alert timings confirmed; 3 rows outstanding |
 | 6. Performance capture | **partial** — 22.8 fps end to end measured; no `tegrastats` capture |
 
 Two findings came out of §2 and are now pinned in the dependency files. Both
@@ -34,12 +34,28 @@ were silent failures rather than obvious ones:
   just `/dev/bus/usb`, which is why the compose file bind-mounts the whole of
   `/dev`.
 
-What is left needs a person, not just hardware: §4 and §5 are both operator
-procedures. Neither needs a display any more — `--tui` runs the corner prompts
-and a live status line in the terminal, so both can be done over ssh; they
-still need someone in front of the camera. Row 5's "step back a metre" check
-remains the only confirmation that depth compensation is applied in the right
-direction.
+§4 was done through the published image over ssh, with no display anywhere:
+
+```
+docker compose --profile calibrate-tui run --rm calibrate-tui
+Calibration: Top-Left accepted ... Bottom-Right accepted
+Calibration saved to /var/lib/gaze_monitor/calibration.json
+```
+
+The stored `calib_z` is 0.649 m, against ~0.67 m measured independently from
+the iris landmark depth — so depth is being read correctly and distance
+compensation has a sane anchor.
+
+Note when reading a stored zone that `dx_min` > `dx_max` is normal, not a
+corrupt record: the gaze axis runs opposite to the screen axis, and
+`AttentionZone.project` divides by the signed span rather than special-casing
+it.
+
+Of §5, the escalation timings are confirmed from the transition log: warning
+at `away 1.0s` against `warn_after: 1.0`, alert at `away 3.0s` against
+`alert_after: 3.0`. Three rows are still outstanding and all need a person:
+the brief-glance-back hysteresis, `SENSOR FAULT` on a covered lens, and
+stepping back a metre.
 
 The image itself has not been run on the board — CI builds and publishes it,
 and nothing here has exercised it. Everything in §2 was verified against the
@@ -178,8 +194,18 @@ python3 demo.py --tui --source realsense --config config.example.yaml
 | Cover the lens | `SENSOR FAULT` after ~`fault_after` |
 | Step back a metre and repeat | zone edges hold (depth compensation) |
 
-The last row is the one worth being fussy about: it is the only check that
-depth is being applied in the right direction.
+The last row is the one worth being fussy about. The arithmetic has been
+checked against a real stored calibration: with compensation on, a sample
+representing the same physical point from 1 m further back projects to
+identical zone coordinates (centre stays u=0.500 v=0.500, edge stays 0.000);
+with it off the same sample reads u=-0.216 v=+1.726 and falls outside. So the
+sign and the magnitude are right.
+
+What that does **not** check is the physical model behind it, which assumes
+the camera sits at the area being watched, so that stepping back increases the
+eye-to-camera and eye-to-target distances together. If the camera is mounted
+well away from the danger zone that assumption breaks, and only the physical
+test will show it.
 
 ## 6. Performance capture
 
