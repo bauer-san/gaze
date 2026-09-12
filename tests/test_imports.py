@@ -56,3 +56,11 @@ def test_unknown_source_raises():
     capture = importlib.import_module("kinect_gaze.capture")
     with pytest.raises(capture.UnknownSourceError):
         capture.create_source("not-a-camera")
+
+
+def test_gstreamer_support_detection_returns_bool():
+    """Parsed out of cv2.getBuildInformation(), whose column widths vary."""
+    pytest.importorskip("cv2")
+    from kinect_gaze.capture import has_gstreamer_support
+
+    assert isinstance(has_gstreamer_support(), bool)

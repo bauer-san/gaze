@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import abc
 import logging
+import re
 from dataclasses import dataclass
 
 import cv2
@@ -266,6 +267,18 @@ class KinectSource(CameraSource):
             self._freenect = None
 
 
+def has_gstreamer_support() -> bool:
+    """Whether this OpenCV build can open GStreamer pipelines.
+
+    getBuildInformation() pads its columns, so match the value rather than a
+    fixed-width substring -- the spacing differs between builds.
+    """
+    match = re.search(
+        r"^\s*GStreamer:\s*(\S+)", cv2.getBuildInformation(), re.MULTILINE
+    )
+    return bool(match) and match.group(1).upper() == "YES"
+
+
 class GStreamerSource(CameraSource):
     """A GStreamer pipeline read through OpenCV's appsink. No depth."""
 
@@ -279,7 +292,7 @@ class GStreamerSource(CameraSource):
         self.cap = cv2.VideoCapture(self.pipeline, cv2.CAP_GSTREAMER)
         if not self.cap.isOpened():
             hint = ""
-            if "GStreamer:                   YES" not in cv2.getBuildInformation():
+            if not has_gstreamer_support():
                 hint = (
                     " This OpenCV build has no GStreamer support -- the PyPI "
                     "wheels are built without it. Use the distribution package "

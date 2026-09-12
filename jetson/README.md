@@ -1,48 +1,121 @@
-# Jetson Orin Nano (Jetson) setup guide
+# Jetson Orin Nano Super deployment
 
-This document collects pragmatic steps and notes to run the Kinect Gaze demo on NVIDIA Jetson devices (Orin Nano, Xavier, etc.). It is not exhaustive — JetPack, L4T, and driver versions matter. Follow the high-level steps below and adapt versions for your board.
+Notes for running the attention monitor on the Jetson Orin Nano Super dev kit
+with an Intel RealSense D435i. JetPack 6 / L4T r36 is assumed; check yours with
+`cat /etc/nv_tegra_release` or `jetson_release`.
 
-Prerequisites
+The container route in [`../Dockerfile`](../Dockerfile) and
+[`../docker-compose.yml`](../docker-compose.yml) is the recommended path — it
+handles the two genuinely awkward dependencies for you. What follows explains
+what it is doing, and how to do it by hand if you would rather not use Docker.
 
-- JetPack installed (match your board): check `nvcc --version` and `jetson_release` output.
-- Sufficient swap or build space for compiling some packages (MediaPipe / Open3D may need source builds).
-- NVIDIA Container Toolkit if you prefer containers.
+## The two hard dependencies
 
-Recommended approach
+Everything else installs normally. These two do not:
 
-1. Use the JetPack-provided Python and apt packages where possible — many python wheels on PyPI are x86-only.
+### librealsense / pyrealsense2
 
-2. Install system packages before pip:
+Intel publishes no aarch64 wheels for most releases, so it must be built from
+source with the Python bindings enabled:
 
 ```bash
-sudo apt update
-sudo apt install -y python3-opencv libopencv-dev libblas-dev liblapack-dev libjpeg-dev libtiff-dev gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good v4l-utils
+git clone --depth 1 --branch v2.56.5 https://github.com/IntelRealSense/librealsense
+cmake -S librealsense -B librealsense/build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DFORCE_RSUSB_BACKEND=true \
+    -DBUILD_PYTHON_BINDINGS=true \
+    -DBUILD_EXAMPLES=false \
+    -DPYTHON_EXECUTABLE=/usr/bin/python3
+cmake --build librealsense/build --parallel "$(nproc)"
+sudo cmake --install librealsense/build && sudo ldconfig
 ```
 
-3. Camera & capture
+`FORCE_RSUSB_BACKEND=true` matters. It makes librealsense talk to the camera
+over libusb rather than through patched kernel modules, which is both easier on
+JetPack and the only option inside a container, since a container cannot load
+kernel modules.
 
-- For CSI cameras on Jetson, use `nvarguscamerasrc` (we provide a `jetson` pipeline in `kinect_gaze.capture`).
-- For USB webcams, prefer V4L2/GStreamer pipelines (`v4l2src`) or the distro `python3-opencv` package which includes GStreamer support.
+Check it with `python3 -c "import pyrealsense2 as rs; rs.context(); print('ok')"`
+(the module exposes no `__version__`). If the import fails, `PYTHONPATH`
+probably needs `/usr/local/lib/python3.10/dist-packages`.
 
-4. Python dependencies
+### MediaPipe
 
-- Use `requirements-jetson.txt` for guidance (project root). Some packages must be installed from apt or built from source:
-  - `opencv-python`: DO NOT pip install the standard wheel — instead use `sudo apt install python3-opencv` or build OpenCV with CUDA.
-  - `mediapipe`: MediaPipe wheels are not always available for Jetson; consider building from source or using an optimized ONNX/TensorRT model.
-  - `pyrealsense2`: follow Intel RealSense Jetson instructions or use pip wheels provided by librealsense where available.
+There is no aarch64 MediaPipe wheel on PyPI. You need one built for JetPack —
+from the [jetson-containers](https://github.com/dusty-nv/jetson-containers)
+project, another community build, or your own source build. Then:
 
-5. Inference optimization
+```bash
+docker compose --profile jetson build gaze-jetson \
+    --build-arg MEDIAPIPE_WHEEL=<url or path>
+```
 
-- Convert heavy models to ONNX and then TensorRT (FP16) for the best performance.
-- Use OpenCV DNN with the TensorRT backend, or use TensorRT Python bindings directly.
-- See `jetson/optimizations.md` for concrete tips.
+The image build fails loudly if no wheel is supplied, rather than producing
+something that looks fine and dies on first frame.
 
-6. Container approach
+## OpenCV
 
-- If you prefer reproducible setups, use an NVIDIA L4T/JetPack base image and install apt packages there. See `Dockerfile.jetson` for a starting example.
+Use the distribution package, never the PyPI wheel:
 
-7. Manual testing & CI notes
+```bash
+sudo apt install -y python3-opencv
+```
 
-- CI cannot run Jetson-specific tests in standard GitHub Actions. See `jetson/CI_NOTES.md` for recommended manual checks and how to capture logs for CI artifacts.
+The apt build is compiled for this architecture and, importantly, has
+GStreamer support — which the PyPI wheels do not. Without it the `jetson` and
+`gst:` camera sources cannot open a pipeline, and
+[`capture.py`](../kinect_gaze/capture.py) will say so explicitly rather than
+failing obscurely.
 
-If you want, I can: (1) add a helper script to probe available camera backends at runtime, (2) add a simple ONNX->TensorRT conversion example, or (3) create a Jetson-tailored Dockerfile that installs and builds MediaPipe. Tell me which you prefer next.
+Do not install `opencv-python` or `opencv-contrib-python` alongside it: two
+OpenCV distributions in one environment install competing copies of `cv2`.
+
+## Cameras
+
+The D435i is the supported camera and needs nothing beyond librealsense above:
+
+```bash
+python3 demo.py --source realsense --config config.example.yaml
+```
+
+For a CSI camera, `--source jetson` builds an `nvarguscamerasrc` pipeline
+(see `jetson_csi_pipeline` in [`capture.py`](../kinect_gaze/capture.py)).
+`--device N` selects the sensor id. There is no depth from a CSI camera, so
+distance compensation is off. For anything else, pass a pipeline directly:
+
+```bash
+python3 demo.py --source 'gst:v4l2src device=/dev/video0 ! videoconvert ! appsink'
+```
+
+## Running as an appliance
+
+Commission once with a display attached, then run headless:
+
+```bash
+docker compose --profile calibrate run --rm calibrate
+docker compose --profile jetson up -d gaze-jetson
+```
+
+Calibration persists in the `gaze-calibration` volume. Headless mode refuses to
+start without it rather than silently monitoring an undefined area.
+
+The service is `restart: unless-stopped` on purpose: an attention monitor that
+has exited looks exactly like one that is quiet because nothing is wrong.
+
+## Performance
+
+MediaPipe FaceMesh with `refine_landmarks=True` is the cost in this pipeline.
+If the frame rate is not adequate:
+
+* Drop the capture resolution first (`camera_width`/`camera_height`). Iris
+  landmarks do not need 1080p; 640×480 is the default for that reason.
+* Put the board in its highest power mode: `sudo nvpmodel -m 0` then
+  `sudo jetson_clocks`.
+* Profile before optimising — `tegrastats` shows whether you are CPU-bound
+  (MediaPipe runs on CPU by default) or elsewhere.
+
+See [`optimizations.md`](optimizations.md) for the TensorRT route if you decide
+to replace MediaPipe with your own landmark model.
+
+Frame rate is visible in the status bar and in `--debug` logs, so you can see
+what the board is actually managing before changing anything.

@@ -1,0 +1,107 @@
+# Operator attention monitor.
+#
+#   Desktop development (x86_64, RealSense over USB):
+#       xhost +local:docker          # once per login, for the calibration UI
+#       docker compose up gaze
+#
+#   Jetson Orin Nano Super:
+#       docker compose --profile jetson build gaze-jetson \
+#           --build-arg MEDIAPIPE_WHEEL=<aarch64 wheel url>
+#       docker compose --profile calibrate run --rm calibrate   # once
+#       docker compose --profile jetson up -d gaze-jetson
+#
+# Calibration lives in the gaze-calibration volume and is shared by all three
+# services, so the unit is commissioned once and every later start reuses it.
+
+x-realsense-device-access: &realsense-device-access
+  # The D435i is a USB device, reached through libusb (the image builds
+  # librealsense with FORCE_RSUSB_BACKEND, so no kernel modules are needed).
+  # These rules grant USB (189) and video4linux (81) character devices without
+  # handing the container blanket privileges. If your host enumerates the
+  # camera differently, `privileged: true` plus a /dev:/dev mount is the
+  # bigger hammer.
+  device_cgroup_rules:
+    - "c 81:* rmw"
+    - "c 189:* rmw"
+
+services:
+  # x86_64 development and calibration, with a window on the host display.
+  gaze:
+    build:
+      context: .
+      target: desktop
+    image: kinect-gaze:desktop
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/kinect_gaze/calibration.json
+      DISPLAY: ${DISPLAY:-:0}
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - gaze-calibration:/var/lib/kinect_gaze
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+    restart: "no"
+
+  # The installed unit: no display, annunciation through the log.
+  gaze-jetson:
+    profiles: ["jetson"]
+    build:
+      context: .
+      target: jetson
+      args:
+        L4T_TAG: ${L4T_TAG:-r36.4.0}
+        MEDIAPIPE_WHEEL: ${MEDIAPIPE_WHEEL:-}
+    image: kinect-gaze:jetson
+    # Requires the NVIDIA container runtime from JetPack.
+    runtime: nvidia
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/kinect_gaze/calibration.json
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - gaze-calibration:/var/lib/kinect_gaze
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --headless
+    # An attention monitor that has exited is indistinguishable from one that
+    # is quiet because nothing is wrong. Restart it, and watch the logs.
+    restart: unless-stopped
+
+  # One-off commissioning run. Needs a display; on the Jetson that is the
+  # dev kit's own HDMI output.
+  calibrate:
+    profiles: ["calibrate"]
+    image: kinect-gaze:jetson
+    runtime: nvidia
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/kinect_gaze/calibration.json
+      DISPLAY: ${DISPLAY:-:0}
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - gaze-calibration:/var/lib/kinect_gaze
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --recalibrate
+      - --fullscreen
+    restart: "no"
+
+volumes:
+  gaze-calibration:
