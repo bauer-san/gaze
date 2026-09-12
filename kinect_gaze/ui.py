@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 
 from .calibration import GazeCalibrator
-from .capture import CameraSource
-from .gaze import GazeFilter, iris_displacement, raw_depth_to_meters
+from .capture import create_source
+from .gaze import GazeFilter, gaze_from_landmarks
 
 try:
     import mediapipe as mp
@@ -29,7 +29,7 @@ def run_monitor(
             "mediapipe is required to run the monitor: pip install mediapipe"
         )
 
-    cam = CameraSource(source=source)
+    cam = create_source(source)
     cam.start()
 
     mp_face_mesh = mp.solutions.face_mesh
@@ -49,34 +49,26 @@ def run_monitor(
 
     try:
         while True:
-            frame, depth = cam.read()
-            if frame is None:
-                break
+            captured = cam.read()
+            if captured is None:
+                continue
+            frame = captured.color
             h, w = frame.shape[:2]
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(rgb)
 
             current_dx = current_dy = current_z = 0.0
+            sample = None
 
             if results.multi_face_landmarks:
-                lm = results.multi_face_landmarks[0]
-                lx, ly, l_px = iris_displacement(468, 33, 133, lm, w, h)
-                rx, ry, r_px = iris_displacement(473, 362, 263, lm, w, h)
-                raw_dx = (lx + rx) / 2.0
-                raw_dy = (ly + ry) / 2.0
+                sample = gaze_from_landmarks(
+                    results.multi_face_landmarks[0], w, h, captured.depth_m
+                )
 
-                # depth handling
-                if depth is not None:
-                    px = int((l_px[0] + r_px[0]) / 2)
-                    py = int((l_px[1] + r_px[1]) / 2)
-                    if 0 <= px < w and 0 <= py < h:
-                        z_raw = int(depth[py, px])
-                        current_z = raw_depth_to_meters(z_raw)
-                else:
-                    current_z = 0.0
-
-                current_dx = filter_x.apply(raw_dx)
-                current_dy = filter_y.apply(raw_dy)
+            if sample is not None:
+                current_z = sample.z_m
+                current_dx = filter_x.apply(sample.dx) or 0.0
+                current_dy = filter_y.apply(sample.dy) or 0.0
 
             display = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
 
@@ -122,7 +114,7 @@ def run_monitor(
             key = cv2.waitKey(1) & 0xFF
             if key == ord("c") and not is_calibrated and not calibrator.is_collecting:
                 calibrator.start_collection()
-            if calibrator.is_collecting:
+            if calibrator.is_collecting and sample is not None:
                 progress, status = calibrator.collect(current_dx, current_dy, current_z)
                 if status == "FINISHED":
                     ok, msg = calibrator.validate_and_save()
