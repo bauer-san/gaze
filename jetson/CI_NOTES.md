@@ -1,9 +1,46 @@
 # Jetson manual verification
 
-GitHub Actions runners are x86_64 and cannot exercise Jetson hardware, so CI
-covers the pure logic only — which is deliberately most of it: `attention`,
-`calibration`, `config` and `gaze` need nothing but numpy. Everything below is
-what a human has to check on the board.
+GitHub Actions runners are x86_64 for the test matrix, so CI covers the pure
+logic only — which is deliberately most of it: `attention`, `calibration`,
+`config` and `gaze` need nothing but numpy. The `jetson-image` job does build
+the aarch64 dependency set on a native arm64 runner and asserts, at build time,
+that the right `cv2` wins, that it has GStreamer, that MediaPipe can build a
+FaceMesh graph and that pyrealsense2 can construct a context. Everything below
+is what still needs a human and a board.
+
+## Status
+
+Checked on a Jetson Orin Nano Super dev kit, L4T r36.4.4 (JetPack 6.2),
+Ubuntu 22.04, Python 3.10.12, on 2026-09-12:
+
+| Section | Result |
+| --- | --- |
+| 1. Imports and backends | **pass** |
+| 2. Camera | **pass** — D435i, fw 5.17.0.10, USB 3.2, 26.1 fps through `RealSenseSource` |
+| 3. Test suite | **pass** — 103 passed, 0 skipped |
+| 4. Calibration round trip | **not run** — needs an operator at the screen |
+| 5. Escalation, by hand | **not run** — needs an operator in front of the camera |
+| 6. Performance capture | **partial** — 22.8 fps end to end measured; no `tegrastats` capture |
+
+Two findings came out of §2 and are now pinned in the dependency files. Both
+were silent failures rather than obvious ones:
+
+* **pyrealsense2 must be >= 2.57.** The L4T kernel has `CONFIG_HID_SENSOR_HUB`
+  unset, so the D435i's IMU never appears, and up to 2.56.5 librealsense throws
+  `bad optional access` out of device creation rather than degrading to
+  "no IMU". The camera enumerates and then cannot be opened. See
+  [`README.md`](README.md#the-imu-and-why-the-version-floor-exists).
+* **The wheels use the V4L2 backend, not RSUSB.** They need `/dev/video*`, not
+  just `/dev/bus/usb`, which is why the compose file bind-mounts the whole of
+  `/dev`.
+
+What is left needs a person, not just hardware: §4 and §5 are both operator
+procedures. Row 5's "step back a metre" check remains the only confirmation
+that depth compensation is applied in the right direction.
+
+The image itself has not been run on the board — CI builds and publishes it,
+and nothing here has exercised it. Everything in §2 was verified against the
+host install, so the image inherits the dependency findings but not the proof.
 
 ## 1. Imports and backends
 
@@ -15,12 +52,36 @@ python3 -c "import mediapipe; print('mediapipe', mediapipe.__version__)"
 python3 -c "from gaze_monitor import capture; print('capture ok')"
 ```
 
-GStreamer support in the OpenCV build (needed for the `jetson` and `gst:`
-sources):
+Both hardware wheels install from PyPI on aarch64 at the pinned versions — no
+librealsense source build, no externally supplied MediaPipe wheel. See
+[`README.md`](README.md) for the version constraints that make that true, and
+check them before bumping either pin.
+
+The `cv2` that answers must be the apt one, and it must have GStreamer (needed
+for the `jetson` and `gst:` sources):
 
 ```bash
-python3 -c "import cv2; print('GStreamer:' in cv2.getBuildInformation())"
-python3 -c "import cv2; print([l for l in cv2.getBuildInformation().splitlines() if 'GStreamer' in l])"
+python3 -c "import cv2; print(cv2.__file__)"   # want /usr/lib/python3.10/dist-packages
+python3 -c "from gaze_monitor.capture import has_gstreamer_support as g; print(g())"
+```
+
+A path under `~/.local` or `/usr/local` means a pip OpenCV is shadowing the apt
+build, and `has_gstreamer_support()` will say `False`. Verified both ways round
+on the board: apt OpenCV 4.8.0 reports `GStreamer: YES (1.20.3)` and `True`;
+`opencv-python` 4.13 and `opencv-contrib-python` 4.11 from PyPI report `NO` and
+`False`.
+
+Both failure messages were confirmed on the board, with no camera attached and
+with a GStreamer-less OpenCV respectively:
+
+```
+CameraError: Could not start the RealSense pipeline at 640x480@30: No device
+connected. Check the camera is on USB 3 (a USB 2 link cannot sustain this
+mode) and that no other process holds the device.
+
+CameraError: Could not open GStreamer pipeline. This OpenCV build has no
+GStreamer support -- the PyPI wheels are built without it. Use the
+distribution package (apt install python3-opencv) or the container image.
 ```
 
 ## 2. Camera
@@ -29,7 +90,37 @@ RealSense enumeration, before involving this project at all:
 
 ```bash
 rs-enumerate-devices -s
+python3 -c "
+import pyrealsense2 as rs
+d = rs.context().query_devices()[0]
+print(d.get_info(rs.camera_info.name),
+      d.get_info(rs.camera_info.firmware_version),
+      d.get_info(rs.camera_info.usb_type_descriptor))
+print([d.sensors[i].get_info(rs.camera_info.name) for i in range(len(d.sensors))])
+"
 ```
+
+Expect `usb_type_descriptor` to be `3.2`; a `2.1` here means the camera has
+negotiated USB 2 and cannot sustain 640x480x30. Expect exactly two sensors,
+`['Stereo Module', 'RGB Camera']` — the Motion Module is absent on this kernel
+and that is not a fault.
+
+Then through the project's own backend, which is what proves the metres
+convention in [`capture.py`](../gaze_monitor/capture.py):
+
+```bash
+python3 -c "
+from gaze_monitor.capture import create_source
+src = create_source('realsense', width=640, height=480, fps=30); src.start()
+f = [src.read() for _ in range(30)][-1]
+d = f.depth_m
+print(f.color.shape, d.dtype, 'valid %.0f%%' % (100 * (d > 0).mean()))
+src.stop()
+"
+```
+
+Measured on the board: 26.1 fps, no transient `None`s over 90 frames, 94% of
+depth pixels valid, depth already `float32` metres.
 
 CSI pipeline, if you are using one:
 

@@ -36,3 +36,54 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  # The Jetson image, built on a native arm64 runner (free for public
+  # repositories) so nothing has to run under QEMU. `needs: test` is what makes
+  # this "publish only after CI passes" -- a red test matrix never reaches here.
+  #
+  # Pull requests build the image but do not push it, so a broken Dockerfile is
+  # caught before merge without publishing anything. The image build is the
+  # only place the aarch64 dependency set is exercised: the runners for `test`
+  # are x86_64, and none of the hardware backends are importable there.
+  jetson-image:
+    needs: test
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # `jetson` is the moving tag the board's compose file pulls;
+          # `jetson-<sha>` is the immutable one to pin a commissioned unit to.
+          tags: |
+            type=raw,value=jetson,enable={{is_default_branch}}
+            type=sha,prefix=jetson-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: jetson
+          platforms: linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

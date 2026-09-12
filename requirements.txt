@@ -1,10 +1,17 @@
 # Core runtime dependencies (pinned deployment set).
 #
-# These pins are verified to resolve together. Two constraints drive them:
-#   * mediapipe 0.10.20 requires numpy<2, so numpy stays on the 1.26 series.
+# These pins are verified to resolve together, on x86_64 and on aarch64
+# (verified on a Jetson Orin Nano Super, L4T r36.4.4, Python 3.10). Three
+# constraints drive them:
+#   * mediapipe requires numpy<2, so numpy stays on the 1.26 series.
+#   * mediapipe publishes aarch64 wheels only for some releases. 0.10.18 is
+#     the newest of the 0.10 series with a cp310 manylinux aarch64 wheel;
+#     0.10.20 and 0.10.21 are x86_64/macOS only. Check before bumping:
+#     https://pypi.org/pypi/mediapipe/json
 #   * mediapipe depends on opencv-contrib-python. Do NOT also install
 #     opencv-python: two OpenCV distributions in one environment install
-#     competing copies of the `cv2` package and shadow each other.
+#     competing copies of the `cv2` package and shadow each other. On the
+#     Jetson the apt build is wanted instead -- see jetson/README.md.
 #
 # Optional hardware backends are deliberately not listed here so that a plain
 # `pip install -r requirements.txt` always succeeds:
@@ -13,5 +20,5 @@
 #                        (there is no working `freenect` package on PyPI).
 numpy==1.26.4
 opencv-contrib-python==4.11.0.86
-mediapipe==0.10.20
+mediapipe==0.10.18
 PyYAML==6.0.3

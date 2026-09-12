@@ -5,21 +5,29 @@
 #       docker compose up gaze
 #
 #   Jetson Orin Nano Super:
-#       docker compose --profile jetson build gaze-jetson \
-#           --build-arg MEDIAPIPE_WHEEL=<aarch64 wheel url>
+#       docker compose --profile jetson pull gaze-jetson        # from GHCR
 #       docker compose --profile calibrate run --rm calibrate   # once
 #       docker compose --profile jetson up -d gaze-jetson
+#
+# The Jetson image is built and published by CI (.github/workflows/ci.yml), so
+# the board pulls it rather than building it. To build it locally anyway:
+#
+#       docker compose --profile jetson build gaze-jetson
 #
 # Calibration lives in the gaze-calibration volume and is shared by all three
 # services, so the unit is commissioned once and every later start reuses it.
 
 x-realsense-device-access: &realsense-device-access
-  # The D435i is a USB device, reached through libusb (the image builds
-  # librealsense with FORCE_RSUSB_BACKEND, so no kernel modules are needed).
-  # These rules grant USB (189) and video4linux (81) character devices without
-  # handing the container blanket privileges. If your host enumerates the
-  # camera differently, `privileged: true` plus a /dev:/dev mount is the
-  # bigger hammer.
+  # The pyrealsense2 wheels use the V4L2 backend, not RSUSB, so the container
+  # needs the /dev/video* nodes and not just /dev/bus/usb. The whole of /dev is
+  # bind-mounted because those nodes renumber across replugs and reboots, and a
+  # fixed `devices:` list would silently point at the wrong one. The cgroup
+  # rules grant video4linux (81) and USB (189) character devices, which is what
+  # makes this work without `privileged: true`.
+  #
+  # No kernel modules are involved either way, which is just as well: a
+  # container cannot load them. The IMU is a separate matter -- see
+  # requirements-realsense.txt.
   device_cgroup_rules:
     - "c 81:* rmw"
     - "c 189:* rmw"
@@ -36,7 +44,7 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
       DISPLAY: ${DISPLAY:-:0}
     volumes:
-      - /dev/bus/usb:/dev/bus/usb
+      - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - gaze-calibration:/var/lib/gaze_monitor
     command:
@@ -55,16 +63,18 @@ services:
       context: .
       target: jetson
       args:
-        L4T_TAG: ${L4T_TAG:-r36.4.0}
-        MEDIAPIPE_WHEEL: ${MEDIAPIPE_WHEEL:-}
-    image: gaze-monitor:jetson
-    # Requires the NVIDIA container runtime from JetPack.
+        L4T_TAG: ${L4T_TAG:-r36.2.0}
+    # Published by CI. Override GAZE_JETSON_IMAGE to run a local build or a
+    # pinned jetson-<sha> tag instead of whatever `jetson` currently points at.
+    image: ${GAZE_JETSON_IMAGE:-ghcr.io/bauer-san/gaze:jetson}
+    # Requires the NVIDIA container runtime from JetPack. It is what mounts the
+    # host's Tegra userspace into the container, which the CSI source needs.
     runtime: nvidia
     <<: *realsense-device-access
     environment:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     volumes:
-      - /dev/bus/usb:/dev/bus/usb
+      - /dev:/dev
       - gaze-calibration:/var/lib/gaze_monitor
     command:
       - python3
@@ -82,14 +92,14 @@ services:
   # dev kit's own HDMI output.
   calibrate:
     profiles: ["calibrate"]
-    image: gaze-monitor:jetson
+    image: ${GAZE_JETSON_IMAGE:-ghcr.io/bauer-san/gaze:jetson}
     runtime: nvidia
     <<: *realsense-device-access
     environment:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
       DISPLAY: ${DISPLAY:-:0}
     volumes:
-      - /dev/bus/usb:/dev/bus/usb
+      - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - gaze-calibration:/var/lib/gaze_monitor
     command:

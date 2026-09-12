@@ -88,12 +88,11 @@ xhost +local:docker
 docker compose up gaze
 ```
 
-On the Jetson, MediaPipe needs an aarch64 wheel supplied at build time — there
-is none on PyPI. librealsense is built from source by the image.
+On the Jetson there is nothing to build: CI builds the image on an arm64
+runner after the tests pass and publishes it to GHCR, and the board pulls it.
 
 ```bash
-docker compose --profile jetson build gaze-jetson \
-    --build-arg MEDIAPIPE_WHEEL=<url or path to an aarch64 wheel>
+docker compose --profile jetson pull gaze-jetson        # ghcr.io/bauer-san/gaze:jetson
 
 docker compose --profile calibrate run --rm calibrate   # once, with a display
 docker compose --profile jetson up -d gaze-jetson       # headless from then on

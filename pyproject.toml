@@ -20,7 +20,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-realsense = ["pyrealsense2>=2.55"]
+# 2.57 is the floor: earlier releases cannot open a D435i on a kernel
+# without CONFIG_HID_SENSOR_HUB. See requirements-realsense.txt.
+realsense = ["pyrealsense2>=2.57"]
 
 [project.scripts]
 gaze-demo = "demo:main"

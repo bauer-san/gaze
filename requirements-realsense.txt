@@ -3,8 +3,22 @@
 # Install on top of requirements.txt:
 #     pip install -r requirements.txt -r requirements-realsense.txt
 #
-# x86_64 desktop: the wheel below installs directly.
-# Jetson (aarch64): Intel does not publish aarch64 wheels for most releases.
-# Build librealsense from source with -DBUILD_PYTHON_BINDINGS=ON, or use the
-# container image (see jetson/README.md and Dockerfile), which builds it for you.
-pyrealsense2==2.56.5.9235
+# Publishes both x86_64 and cp310 manylinux2014 aarch64 wheels, so it installs
+# from PyPI on a Jetson as well. Not every release does -- check
+# https://pypi.org/pypi/pyrealsense2/json before bumping.
+#
+# 2.57 is a hard floor on JetPack, and the reason is not obvious. The L4T
+# kernel is built with CONFIG_HID_SENSOR_HUB unset, so the D435i's IMU never
+# gets an iio device. Up to and including 2.56.5, librealsense reacts to the
+# missing HID interface by throwing 'bad optional access' out of
+# rs2_create_device -- the camera enumerates and then cannot be opened at all.
+# 2.57 and later log 'No HID info provided, IMU is disabled' and carry on with
+# the depth and colour sensors, which is all this project uses. Verified on
+# L4T r36.4.4 / Python 3.10: 2.56.5 fails, 2.57.7 and 2.58.x work.
+#
+# The wheels use the V4L2 backend, not RSUSB: they need the /dev/video* nodes,
+# not just /dev/bus/usb. See docker-compose.yml for what that means for the
+# container, and jetson/README.md for running outside one.
+#
+# Kinect v1 still needs libfreenect built from source.
+pyrealsense2==2.58.4.10922
