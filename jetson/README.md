@@ -17,9 +17,10 @@ docker compose --profile jetson pull gaze-jetson
 Tags are `jetson` (moving, follows `main`) and `jetson-<sha>` (immutable — pin
 a commissioned unit to one of these). Set `GAZE_JETSON_IMAGE` to override.
 
-GHCR creates a new package as private even when the repository is public. On
-the first publish, either make the package public in its GitHub settings, or
-log the board in once:
+The package inherits the repository's visibility, so for this public
+repository it pulls anonymously — verified against `ghcr.io` with no
+credentials. If you make the repository private, or GHCR ever publishes the
+package private, log the board in once:
 
 ```bash
 echo <a-personal-access-token-with-read:packages> | \
