@@ -1,16 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kinect-gaze"
+version = "0.2.0"
+description = "Camera-based operator attention monitor for machinery danger zones"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Loose ranges describe what the package is compatible with.
+# requirements.txt holds the exact, verified deployment pins.
+dependencies = [
+    "numpy>=1.24,<2",
+    "opencv-contrib-python>=4.9",
+    "mediapipe>=0.10.14,<0.11",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+realsense = ["pyrealsense2>=2.55"]
+
+[project.scripts]
+gaze-demo = "demo:main"
+
+[tool.setuptools]
+packages = ["kinect_gaze"]
+
 [tool.black]
 line-length = 88
-exclude = '''
-/(archive|\.git|\.venv|venv)/
+# Pin the target explicitly. Left to inference from requires-python,
+# black targets the newest Python in the range and emits syntax that
+# older interpreters in the CI matrix cannot parse.
+target-version = ["py310"]
+extend-exclude = '''
+/(archive)/
 '''
 
 [tool.ruff]
 line-length = 88
+target-version = "py310"
 exclude = ["archive", ".git", "__pycache__"]
 
-[tool.flake8]
-max-line-length = 88
-exclude = ["archive", ".git", "__pycache__", "venv", ".venv"]
+[tool.ruff.lint]
+# Defaults (E4, E7, E9, F) plus line-length, imports, bugbear and pyupgrade.
+select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.isort]
 profile = "black"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

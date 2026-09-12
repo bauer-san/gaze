@@ -1,6 +1,5 @@
 """Camera abstraction: supports webcam fallback and Kinect (freenect) when available."""
 
-from typing import Tuple, Optional
 import numpy as np
 
 try:
@@ -28,7 +27,7 @@ class CameraSource:
             if not self.cap.isOpened():
                 raise RuntimeError("Unable to open webcam")
 
-    def read(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    def read(self) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Returns (bgr_frame, depth) where depth may be None for webcam."""
         if self.source == "kinect":
             depth, _ = freenect.sync_get_depth(0, freenect.DEPTH_REGISTERED)

@@ -1,5 +1,11 @@
-black==26.3.0
-ruff==0.15.5
+# Developer tooling. Pinned so local runs and CI format identically --
+# a black minor bump can change formatting and turn `black --check` red.
+black==26.5.1
+ruff==0.16.7
 flake8==7.3.0
-pytest==9.0.2
+pytest==9.1.1
 
+# The test suite covers the pure-logic modules (calibration, gaze, attention),
+# which need only numpy. PyYAML is needed to import demo.py.
+numpy==1.26.4
+PyYAML==6.0.3

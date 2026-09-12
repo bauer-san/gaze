@@ -1,0 +1,14 @@
+# flake8 does not read pyproject.toml without the Flake8-pyproject plugin,
+# so its configuration lives here. Keep max-line-length in sync with
+# [tool.black] and [tool.ruff] in pyproject.toml.
+[flake8]
+max-line-length = 88
+extend-ignore = E203, W503
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    archive,
+    build,
+    dist

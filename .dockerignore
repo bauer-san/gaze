@@ -1,0 +1,14 @@
+.git
+.github
+archive
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache
+.ruff_cache
+data
+*.log
+config.yaml
+calibration.json

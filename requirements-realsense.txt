@@ -1,0 +1,10 @@
+# Intel RealSense D435i support.
+#
+# Install on top of requirements.txt:
+#     pip install -r requirements.txt -r requirements-realsense.txt
+#
+# x86_64 desktop: the wheel below installs directly.
+# Jetson (aarch64): Intel does not publish aarch64 wheels for most releases.
+# Build librealsense from source with -DBUILD_PYTHON_BINDINGS=ON, or use the
+# container image (see jetson/README.md and Dockerfile), which builds it for you.
+pyrealsense2==2.56.5.9235

@@ -1,6 +1,5 @@
 """Gaze math utilities and simple smoothing filter."""
 
-from typing import Tuple
 import numpy as np
 
 
@@ -24,7 +23,7 @@ def iris_displacement(
     face_landmarks,
     w: int,
     h: int,
-) -> Tuple[float, float, Tuple[int, int]]:
+) -> tuple[float, float, tuple[int, int]]:
     """Compute normalized dx, dy for one eye and return iris pixel coords.
 
     dx, dy are normalized relative to eye width: roughly -1..1 range.

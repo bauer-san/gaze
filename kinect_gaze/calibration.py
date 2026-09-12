@@ -1,7 +1,7 @@
 """Simple calibration routine for four-screen corners and bounds calculation."""
 
 import time
-from typing import List, Tuple
+
 import numpy as np
 
 
@@ -12,10 +12,10 @@ class GazeCalibrator:
 
         self.is_collecting = False
         self.start_time = 0.0
-        self.samples: List[Tuple[float, float, float]] = []
+        self.samples: list[tuple[float, float, float]] = []
 
         self.calib_idx = 0
-        self.calib_data: List[Tuple[float, float]] = []
+        self.calib_data: list[tuple[float, float]] = []
         self.calib_z = 1.0
 
     def start_collection(self):
@@ -23,7 +23,7 @@ class GazeCalibrator:
         self.start_time = time.time()
         self.samples = []
 
-    def collect(self, dx: float, dy: float, z: float) -> Tuple[int, str]:
+    def collect(self, dx: float, dy: float, z: float) -> tuple[int, str]:
         elapsed = time.time() - self.start_time
         progress = int((elapsed / self.sample_duration) * 100)
         if elapsed <= self.sample_duration:
@@ -31,7 +31,7 @@ class GazeCalibrator:
             return max(0, min(100, progress)), "COLLECTING"
         return 100, "FINISHED"
 
-    def validate_and_save(self) -> Tuple[bool, str]:
+    def validate_and_save(self) -> tuple[bool, str]:
         a = np.array(self.samples)
         if a.size == 0:
             self.is_collecting = False

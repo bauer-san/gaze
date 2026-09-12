@@ -6,9 +6,9 @@ This UI is intentionally minimal and uses MediaPipe + OpenCV when available.
 import cv2
 import numpy as np
 
+from .calibration import GazeCalibrator
 from .capture import CameraSource
 from .gaze import GazeFilter, iris_displacement, raw_depth_to_meters
-from .calibration import GazeCalibrator
 
 try:
     import mediapipe as mp
@@ -114,7 +114,9 @@ def run_monitor(
                 cv2.circle(display, (sx, sy), 20, (0, 0, 255), -1)
 
             if debug:
-                cv2.putText(display, f"Z: {current_z:.2f}", (10, 30), 1, 1, (0, 255, 0), 1)
+                cv2.putText(
+                    display, f"Z: {current_z:.2f}", (10, 30), 1, 1, (0, 255, 0), 1
+                )
 
             cv2.imshow(win_name, display)
             key = cv2.waitKey(1) & 0xFF
@@ -125,7 +127,15 @@ def run_monitor(
                 if status == "FINISHED":
                     ok, msg = calibrator.validate_and_save()
                     if not ok:
-                        cv2.putText(display, msg, (int(screen_w * 0.15), int(screen_h * 0.55)), 1, 1, (0, 0, 255), 2)
+                        cv2.putText(
+                            display,
+                            msg,
+                            (int(screen_w * 0.15), int(screen_h * 0.55)),
+                            1,
+                            1,
+                            (0, 0, 255),
+                            2,
+                        )
                     if calibrator.is_finished():
                         bounds = calibrator.finalize_bounds()
                         dx_min = bounds["dx_min"]
