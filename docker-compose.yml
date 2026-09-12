@@ -16,6 +16,13 @@
 #
 # Calibration lives in the gaze-calibration volume and is shared by all three
 # services, so the unit is commissioned once and every later start reuses it.
+#
+# Every service mounts the host's /etc/localtime and /etc/timezone read-only,
+# so container log timestamps are in the board's local time rather than UTC.
+# Without it a log line has to be mentally shifted before it can be compared
+# against anything else on the machine -- a monitoring dashboard, the host's
+# own journal, or the time an operator says something happened. glibc reads
+# /etc/localtime directly, so this works without tzdata in the image.
 
 x-realsense-device-access: &realsense-device-access
   # The pyrealsense2 wheels use the V4L2 backend, not RSUSB, so the container
@@ -45,6 +52,8 @@ services:
       DISPLAY: ${DISPLAY:-:0}
     volumes:
       - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - gaze-calibration:/var/lib/gaze_monitor
     command:
@@ -75,6 +84,8 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     volumes:
       - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - gaze-calibration:/var/lib/gaze_monitor
     command:
       - python3
@@ -105,6 +116,8 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     volumes:
       - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - gaze-calibration:/var/lib/gaze_monitor
     # Both are needed: the terminal UI refuses to start without a tty, rather
     # than silently drawing a status line nobody can see or read keys nobody
@@ -134,6 +147,8 @@ services:
       DISPLAY: ${DISPLAY:-:0}
     volumes:
       - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - gaze-calibration:/var/lib/gaze_monitor
     command:

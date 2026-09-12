@@ -20,7 +20,7 @@ Ubuntu 22.04, Python 3.10.12, on 2026-09-12:
 | 3. Test suite | **pass** — 103 passed, 0 skipped |
 | 4. Calibration round trip | **pass** — four corners accepted over ssh, `calib_z` 0.649 m |
 | 5. Escalation, by hand | **partial** — warn/alert timings confirmed; 3 rows outstanding |
-| 6. Performance capture | **partial** — 22.8 fps end to end measured; no `tegrastats` capture |
+| 6. Performance capture | **pass** — 22.8 fps end to end; ~10.5% CPU, GR3D idle, 55 degC |
 
 Two findings came out of §2 and are now pinned in the dependency files. Both
 were silent failures rather than obvious ones:
@@ -209,10 +209,51 @@ test will show it.
 
 ## 6. Performance capture
 
+Board-level resource use is already collected continuously by the nv-monitor
+scrape behind the Grafana "Orin Fleet Monitor" dashboard, per device. For
+anything that runs longer than a few seconds, read it there rather than
+capturing by hand: it has history, so a run can be compared against the
+board's idle baseline instead of against nothing.
+
+Container logs are in the board's local time (the compose services mount the
+host's `/etc/localtime`), so a timestamp in the demo's output lines up with
+the dashboard's axis directly, with no UTC arithmetic in between.
+
+**The scrape is not fast.** It samples on an interval that will miss a short
+spike entirely, so it answers "what does this cost while it runs" and not
+"what was the worst instant". For anything brief -- start-up, a single
+calibration fixation, a fault-and-recover -- take the fine-grained capture
+instead, and correlate the two:
+
 ```bash
-sudo tegrastats --interval 1000 > tegrastats.log &
+sudo tegrastats --interval 100 > tegrastats.log &
 python3 demo.py --source realsense --config config.example.yaml --debug
 ```
 
-Attach `tegrastats.log`, the demo's stdout/stderr, and your JetPack/L4T version
-and board model to any issue or PR.
+Measured for a commissioning run plus a few minutes of monitoring
+(640x480x30, one face in frame, MAXN_SUPER):
+
+| | |
+| --- | --- |
+| CPU | ~10.5% peak, against a 1-2% idle baseline |
+| GR3D (GPU) | flat at zero for the whole run |
+| NVDEC / NVENC | flat at zero |
+| Temperature | 54-55 degC, no rise over the run |
+
+GR3D staying at zero is the useful one: it is the direct confirmation that
+MediaPipe is running on the CPU through XNNPACK and that the GPU is entirely
+idle. That is the headroom the TensorRT route in
+[`optimizations.md`](optimizations.md) would be spending, and the reason there
+is no case for spending it yet. NVDEC/NVENC at zero is expected -- the
+RealSense delivers raw frames and no codec is in the path.
+
+Two things not to be misled by when reading that dashboard. Its "GPU Percent"
+panel disagreed with "GR3D Utilization" during this run (about 5% against
+zero at the same instant), so at least one of them is not plotting GPU
+utilisation; GR3D is the one that matches what the pipeline actually does.
+And the temperature trace dithering between two adjacent values is sensor
+quantisation, not thermal cycling -- nothing on a passively cooled board
+oscillates at that rate.
+
+Attach the demo's stdout/stderr, the dashboard window (or `tegrastats.log`),
+and your JetPack/L4T version and board model to any issue or PR.
