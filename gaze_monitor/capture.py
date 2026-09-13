@@ -149,12 +149,11 @@ class RealSenseSource(CameraSource):
         except ImportError as exc:  # pragma: no cover - depends on hardware SDK
             raise CameraError(
                 "pyrealsense2 is not installed. Install it with "
-                "`pip install -r requirements-realsense.txt`, or on Jetson "
-                "build librealsense with -DBUILD_PYTHON_BINDINGS=ON "
-                "(see jetson/README.md)."
+                "`pip install -r requirements-realsense.txt`; the pinned "
+                "version publishes aarch64 wheels, so that works on Jetson "
+                "too (see jetson/README.md)."
             ) from exc
 
-        self._rs = rs
         self.pipeline = rs.pipeline()
         config = rs.config()
         if self.serial:

@@ -40,7 +40,6 @@ try:  # pragma: no cover - exercised by whether the import lands
 except ImportError:  # pragma: no cover
     AVAILABLE = False
 
-DEFAULT_PORT = 9091
 
 
 class Metrics:
