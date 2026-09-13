@@ -12,3 +12,14 @@ data
 *.log
 config.yaml
 calibration.json
+
+# Documentation and developer tooling. Nothing in the image reads any of it,
+# and keeping it out of the build context is what lets CI skip the image build
+# for a docs-only commit without that being a lie -- see the image-changes job
+# in .github/workflows/ci.yml, whose path list mirrors this file.
+*.md
+**/*.md
+docker-compose.yml
+dev-requirements.txt
+.flake8
+.gitignore

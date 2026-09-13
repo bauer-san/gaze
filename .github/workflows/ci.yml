@@ -37,6 +37,50 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  # Does this change anything that ends up in the image? Documentation does
+  # not: .dockerignore keeps it out of the build context, and the path list
+  # below mirrors that file. Without this, a docs-only commit republishes an
+  # image identical in content and mints a jetson-<sha> tag that means nothing.
+  #
+  # When the answer cannot be determined -- a first push, a force push, a
+  # shallow clone -- it builds. Publishing a redundant image costs a minute;
+  # skipping one that was needed leaves the `jetson` tag pointing at code that
+  # is no longer on main, which is the failure worth avoiding.
+  image-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE}" ] \
+             || [ "${BASE}" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "No usable diff base (${BASE:-none}); building."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "${BASE}" "${HEAD}")"
+          echo "Changed files:"
+          echo "${changed}" | sed 's/^/  /'
+
+          # Mirrors .dockerignore: everything here reaches the build context.
+          if echo "${changed}" | grep -qE '^(Dockerfile|\.dockerignore|demo\.py|config\.example\.yaml|pyproject\.toml|requirements[^/]*\.txt|gaze_monitor/|tests/|\.github/workflows/ci\.yml)'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing that reaches the image changed; skipping the build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # The Jetson image, built on a native arm64 runner (free for public
   # repositories) so nothing has to run under QEMU. `needs: test` is what makes
   # this "publish only after CI passes" -- a red test matrix never reaches here.
@@ -46,7 +90,8 @@ jobs:
   # only place the aarch64 dependency set is exercised: the runners for `test`
   # are x86_64, and none of the hardware backends are importable there.
   jetson-image:
-    needs: test
+    needs: [test, image-changes]
+    if: needs.image-changes.outputs.build == 'true'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
