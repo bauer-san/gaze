@@ -259,3 +259,44 @@ def test_reset_returns_to_attentive():
 def test_rejects_warn_after_above_alert_after():
     with pytest.raises(ValueError):
         AttentionMonitor(zone=square_zone(), warn_after=5.0, alert_after=1.0)
+
+
+# --- distance reporting ---------------------------------------------------
+
+
+def test_status_reports_the_distance_of_the_measured_gaze():
+    m = monitor()
+    assert m.update(0.0, FakeGaze(0.0, 0.0, z_m=1.62)).z_m == pytest.approx(1.62)
+
+
+def test_status_reports_no_distance_when_the_gaze_is_unmeasured():
+    """0.0 means "no reading", so an untracked frame must not go on reporting
+    the last distance as though it were current."""
+    m = monitor()
+    m.update(0.0, FakeGaze(0.0, 0.0, z_m=1.62))
+    assert m.update(0.1, None).z_m == 0.0
+
+
+def test_a_camera_fault_reports_no_distance():
+    m = monitor()
+    m.update(0.0, FakeGaze(0.0, 0.0, z_m=1.62))
+    m.update(0.5, None, camera_ok=False)
+    assert m.update(2.0, None, camera_ok=False).z_m == 0.0
+
+
+def test_the_transition_hook_sees_the_distance():
+    """A transition is what reaches the log, so it has to carry the distance:
+    otherwise a pasted log cannot show whether the operator moved."""
+    seen = []
+    m = AttentionMonitor(
+        zone=square_zone(),
+        warn_after=1.0,
+        alert_after=3.0,
+        clear_after=0.4,
+        fault_after=1.0,
+        on_transition=lambda old, new, status: seen.append(status.z_m),
+    )
+    m.update(0.0, FakeGaze(0.0, 0.0, z_m=0.65))
+    m.update(2.0, FakeGaze(9.0, 9.0, z_m=1.62))  # leaves the zone, away timer starts
+    m.update(3.5, FakeGaze(9.0, 9.0, z_m=1.62))  # past warn_after: transition fires
+    assert seen and seen[-1] == pytest.approx(1.62)

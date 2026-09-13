@@ -222,14 +222,35 @@ python3 demo.py --tui --source realsense --config config.example.yaml
 ```
 
 
-| Action | Expected |
-| --- | --- |
-| Look at the blade area | `WATCHING BLADE`, green |
-| Look away, hold | amber at ~`warn_after`, red at ~`alert_after` |
-| Look back briefly, away again | stays red — hysteresis, does not flicker clear |
-| Look back and hold | clears after ~`clear_after` |
-| Cover the lens | `SENSOR FAULT` after ~`fault_after` |
-| Step back a metre and repeat | zone edges hold (depth compensation) |
+This table used to describe colours -- "amber", "red" -- which only exist in
+the window UI and the `--tui` status line. An installed unit runs `--headless`
+and its entire annunciator is the log, where there are no colours at all, only
+state names. Read the state, not the colour:
+
+| Action | Expected | In the log? |
+| --- | --- | --- |
+| Look at the blade area | `attentive` | yes |
+| Look away, hold | `warning` at ~`warn_after`, `alert` at ~`alert_after` | yes |
+| Look back briefly, away again | stays `alert` | **no** -- see below |
+| Look back and hold | clears after ~`clear_after` | yes |
+| Cover the lens | `fault` after ~`fault_after` | yes |
+| Step back a metre and repeat | zone holds; `distance=` rises | yes |
+
+The hysteresis row is the awkward one, because **the expected outcome is the
+absence of a log line.** A glance back shorter than `clear_after` does not
+change the state, so nothing is written, and "the hysteresis held" is
+indistinguishable in the log from "the operator never glanced back". Watching
+`docker logs` cannot settle that row however long you stare at it.
+
+To see it, run with `--tui` and watch a single line update in place: `zone=`
+flips to `in` while the state stays `ATTENTION LOST`. That is the hysteresis,
+directly observed. Alternatively scrape the metrics, where a counter of zone
+re-entries rising while the alert-to-attentive counter does not is the same
+evidence, and survives being sampled slowly.
+
+Every transition now logs `distance=`, so the backing-up row leaves evidence
+in an ordinary `docker logs` paste: the distance on each transition should
+rise as the operator steps back while the states still reach `attentive`.
 
 The last row is the one worth being fussy about. The arithmetic has been
 checked against a real stored calibration: with compensation on, a sample

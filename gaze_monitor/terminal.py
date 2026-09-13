@@ -80,11 +80,12 @@ def monitoring_line(status, fps: float) -> str:
         if position is not None
         else "gaze=(  --  ,  --  )"
     )
+    distance = f"{status.z_m:5.2f}m" if status.z_m > 0.0 else "  --  "
     return (
         f"[{label:<14}] away {status.away_seconds:5.1f}s  "
         f"tracked={'yes' if status.tracked else 'no':<3}  "
         f"zone={'in' if status.in_zone else 'out':<3}  "
-        f"{where}  {fps:5.1f} fps"
+        f"dist={distance}  {where}  {fps:5.1f} fps"
     )
 
 

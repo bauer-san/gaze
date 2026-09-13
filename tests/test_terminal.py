@@ -68,6 +68,7 @@ def _status(**kwargs):
         in_zone=True,
         tracked=True,
         position=(0.0, 0.0),
+        z_m=0.65,
     )
     defaults.update(kwargs)
     return AttentionStatus(**defaults)
@@ -231,3 +232,17 @@ def test_terminal_modes_are_restored_on_stop():
         # stop() is also called again by __exit__; it must tolerate that.
         t.ui.stop()
         assert termios.tcgetattr(fd) == before
+
+
+def test_monitoring_line_shows_the_operator_distance():
+    """The backing-up check is unobservable without it: a state change looks
+    identical whether the operator moved or not."""
+    line = monitoring_line(_status(z_m=1.62), 30.0)
+    assert "1.62m" in line
+
+
+def test_monitoring_line_marks_a_missing_distance():
+    """0.0 is the 'no reading' sentinel, not a distance of zero metres."""
+    line = monitoring_line(_status(z_m=0.0), 30.0)
+    assert "0.00m" not in line
+    assert "--" in line

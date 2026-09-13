@@ -158,6 +158,11 @@ class AttentionStatus:
     in_zone: bool = False
     tracked: bool = False
     position: tuple[float, float] | None = None
+    # Operator distance in metres, 0.0 for "no reading" -- the same convention
+    # the rest of the package uses. Carried here so an annunciator can show it
+    # and so a transition is self-describing: "left the zone" and "left the
+    # zone while backing away" are different events with the same state change.
+    z_m: float = 0.0
 
     @property
     def is_alarming(self) -> bool:
@@ -194,6 +199,9 @@ class AttentionMonitor:
     _away_since: float | None = field(default=None, init=False)
     _returned_since: float | None = field(default=None, init=False)
     _camera_bad_since: float | None = field(default=None, init=False)
+    # Last distance seen, so _status can report it without every call site
+    # having to pass it down.
+    _last_z_m: float = field(default=0.0, init=False)
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.warn_after <= self.alert_after:
@@ -204,6 +212,7 @@ class AttentionMonitor:
         self._away_since = None
         self._returned_since = None
         self._camera_bad_since = None
+        self._last_z_m = 0.0
 
     def update(
         self,
@@ -220,8 +229,11 @@ class AttentionMonitor:
         pessimistic one.
         """
         if not camera_ok:
+            # A camera that cannot be read has no distance to report.
+            self._last_z_m = 0.0
             return self._camera_fault(now)
         self._camera_bad_since = None
+        self._last_z_m = gaze.z_m if gaze is not None else 0.0
 
         if self.zone is None:
             # Uncalibrated: nothing to be attentive *to*. Hold, do not alarm.
@@ -295,6 +307,7 @@ class AttentionMonitor:
             in_zone=in_zone,
             tracked=tracked,
             position=position,
+            z_m=self._last_z_m,
         )
 
     def _settle(self, now, state, away, in_zone, tracked, position) -> AttentionStatus:

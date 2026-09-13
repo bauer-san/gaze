@@ -72,11 +72,12 @@ def _log_transition(old: AttentionState, new: AttentionState, status) -> None:
     level = logging.WARNING if new.is_alarming else logging.INFO
     log.log(
         level,
-        "attention %s -> %s (away %.1fs, tracked=%s)",
+        "attention %s -> %s (away %.1fs, tracked=%s, distance=%s)",
         old.value,
         new.value,
         status.away_seconds,
         status.tracked,
+        f"{status.z_m:.2f}m" if status.z_m > 0.0 else "none",
     )
 
 
