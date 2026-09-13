@@ -124,6 +124,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Gaze smoothing factor (0-1]; lower is smoother but slower",
     )
 
+    metrics = parser.add_argument_group("metrics")
+    metrics.add_argument(
+        "--metrics-port",
+        type=int,
+        default=None,
+        help=(
+            "Serve Prometheus metrics on this port; 0 disables. Counters here "
+            "survive slow scraping, which state-change logs do not."
+        ),
+    )
+
     calib = parser.add_argument_group("calibration")
     calib.add_argument(
         "--calibration-file",
@@ -176,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
                 "fault_after",
                 "zone_margin",
                 "min_depth_fraction",
+                "metrics_port",
                 "calibration_file",
             )
         }

@@ -82,6 +82,11 @@ services:
     <<: *realsense-device-access
     environment:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
+    # Prometheus exporter (metrics_port in config.example.yaml). Only the
+    # long-running services publish it; the one-off calibration runs would
+    # collide with this one for the host port.
+    ports:
+      - "${GAZE_METRICS_PORT:-9091}:9091"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro

@@ -220,6 +220,43 @@ start without it rather than silently monitoring an undefined area.
 The service is `restart: unless-stopped` on purpose: an attention monitor that
 has exited looks exactly like one that is quiet because nothing is wrong.
 
+## Metrics
+
+The unit exports Prometheus metrics on port 9091 (`metrics_port` in the
+config, `--metrics-port` on the command line, 0 to disable). The compose file
+publishes it. Point an existing Prometheus at the board:
+
+```yaml
+scrape_configs:
+  - job_name: gaze
+    static_configs:
+      - targets: ["orin-nano-super:9091"]
+```
+
+This exists because the log is a poor instrument for a headless unit: it
+records state *changes* and nothing else. The counters are the part worth
+understanding, because they answer questions a slow scrape otherwise cannot:
+
+| Metric | |
+| --- | --- |
+| `gaze_zone_reentries_total` | gaze came back inside the zone, whatever the state machine did about it |
+| `gaze_state_transitions_total{from_state,to_state}` | an actual state change |
+| `gaze_frames_total`, `gaze_dropped_frames_total` | camera health over time |
+
+A glance back shorter than `clear_after` is *supposed* to leave the alarm
+standing, so it changes no state and writes no log line. Sampling gauges every
+fifteen seconds will step straight over it. But the re-entry counter moves and
+the alert-to-attentive counter does not, and counters accumulate -- so the
+difference is still visible at any scrape interval, and still there tomorrow.
+
+The gauges are the live picture: `gaze_state{state=...}`, `gaze_away_seconds`,
+`gaze_in_zone`, `gaze_tracked`, `gaze_camera_ok`, `gaze_frame_rate_fps`, and
+`gaze_operator_distance_meters` against `gaze_calibration_distance_meters` --
+plotting those two together is the depth-compensation check as a single graph.
+
+A port already in use logs an error and the monitor carries on. Exporting is
+diagnostics; watching the operator is the job.
+
 ## Performance
 
 Measured on the board (L4T r36.4.4, MAXN_SUPER power mode, D435i at

@@ -22,3 +22,8 @@ numpy==1.26.4
 opencv-contrib-python==4.11.0.86
 mediapipe==0.10.18
 PyYAML==6.0.3
+# Prometheus exporter (gaze_monitor.metrics). Pure Python, py3-none-any, so it
+# costs the aarch64 story nothing. The exporter stays inert unless metrics_port
+# is set, and the import is guarded, so a hand-built environment without it
+# still runs.
+prometheus-client==0.26.0

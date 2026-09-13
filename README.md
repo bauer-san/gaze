@@ -105,6 +105,18 @@ The record is versioned. A file from a different version, or a corrupt one, is
 refused and logged, and the system asks to be recalibrated — it will not
 reinterpret old numbers, because that would move the danger zone silently.
 
+## Metrics
+
+```bash
+python3 demo.py --metrics-port 9091 --config config.example.yaml
+```
+
+Prometheus metrics for a unit you cannot see: state, away time, operator
+distance against the calibrated distance, frame rate, camera health, and
+counters for state transitions and zone re-entries. Disabled unless a port is
+given. See [`jetson/README.md`](jetson/README.md#metrics) for why the counters
+matter more than the gauges.
+
 ## Docker
 
 ```bash

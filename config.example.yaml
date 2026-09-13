@@ -45,6 +45,12 @@ zone_margin: 0.1
 # Set to 0 to disable. Ignored by cameras with no depth (webcam, CSI).
 min_depth_fraction: 0.05
 
+# --- metrics --------------------------------------------------------------
+# Prometheus exporter. 0 disables it. Counters here (zone re-entries, state
+# transitions) survive a slow scrape, which the state-change log does not: a
+# glance back shorter than clear_after changes no state and writes no line.
+metrics_port: 9091
+
 # Gaze smoothing (0-1]. Lower is steadier but slower to react.
 filter_alpha: 0.12
 

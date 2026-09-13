@@ -244,9 +244,18 @@ indistinguishable in the log from "the operator never glanced back". Watching
 
 To see it, run with `--tui` and watch a single line update in place: `zone=`
 flips to `in` while the state stays `ATTENTION LOST`. That is the hysteresis,
-directly observed. Alternatively scrape the metrics, where a counter of zone
-re-entries rising while the alert-to-attentive counter does not is the same
-evidence, and survives being sampled slowly.
+directly observed. Alternatively scrape the metrics and compare two counters
+over the window you were testing in:
+
+```promql
+increase(gaze_zone_reentries_total[5m])
+increase(gaze_state_transitions_total{from_state="alert",to_state="attentive"}[5m])
+```
+
+If the first rose and the second did not, the gaze came back inside the zone
+without the alarm clearing, which is the hysteresis and nothing else. Counters
+accumulate, so this works at any scrape interval and can be asked hours later
+-- neither of which is true of watching a status line in real time.
 
 Every transition now logs `distance=`, so the backing-up row leaves evidence
 in an ordinary `docker logs` paste: the distance on each transition should

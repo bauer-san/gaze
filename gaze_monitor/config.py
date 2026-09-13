@@ -64,6 +64,11 @@ class MonitorConfig:
     # notices. 0 disables the check. Only applies to cameras with depth.
     min_depth_fraction: float = MIN_DEPTH_FRACTION
 
+    # -- metrics --
+    # TCP port for the Prometheus exporter; 0 disables it. Off by default
+    # because opening a listening socket should be asked for, not assumed.
+    metrics_port: int = 0
+
     # -- calibration --
     sample_duration: float = 1.0
     sigma_threshold: float = 0.05
@@ -93,6 +98,10 @@ class MonitorConfig:
             raise ConfigError("zone_margin must be >= 0")
         if self.sample_duration <= 0:
             raise ConfigError("sample_duration must be > 0")
+        if not 0 <= self.metrics_port <= 65535:
+            raise ConfigError(
+                f"metrics_port must be in [0, 65535], got {self.metrics_port}"
+            )
         if not 0.0 <= self.min_depth_fraction < 1.0:
             raise ConfigError(
                 "min_depth_fraction must be in [0, 1), got "

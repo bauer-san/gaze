@@ -34,6 +34,7 @@ from .calibration import (
 from .capture import CameraError, create_source
 from .config import MonitorConfig
 from .gaze import GazeFilter, gaze_from_landmarks
+from .metrics import Metrics
 from .quality import depth_is_blind
 
 log = logging.getLogger(__name__)
@@ -401,13 +402,22 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     else:
         log.info("No stored calibration; starting calibration.")
 
+    metrics = Metrics(config.metrics_port)
+    metrics.start()
+    if record is not None:
+        metrics.set_calibration_distance(record.zone.calib_z)
+
+    def _on_transition(old, new, status) -> None:
+        _log_transition(old, new, status)
+        metrics.record_transition(old, new)
+
     monitor = AttentionMonitor(
         zone=record.zone if record else None,
         warn_after=config.warn_after,
         alert_after=config.alert_after,
         clear_after=config.clear_after,
         fault_after=config.fault_after,
-        on_transition=_log_transition,
+        on_transition=_on_transition,
     )
     calibrator = GazeCalibrator(
         sample_duration=config.sample_duration,
@@ -512,6 +522,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                                 ),
                             )
                             save_calibration(record, config.calibration_file)
+                            metrics.set_calibration_distance(record.zone.calib_z)
                             monitor.zone = record.zone
                             monitor.reset()
                             calibrating = False
@@ -520,6 +531,8 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 status = monitor.update(now, None, camera_ok=camera_ok)
             else:
                 status = monitor.update(now, sample, camera_ok=camera_ok)
+
+            metrics.observe(status, fps, camera_ok, captured is not None)
 
             ui.render(
                 calibrating=calibrating,
