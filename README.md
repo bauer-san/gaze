@@ -171,9 +171,6 @@ The thresholds worth thinking about for a given installation:
 numpy, so the logic that decides whether to alarm is tested without a camera,
 OpenCV or MediaPipe.
 
-Earlier experiments are in [`archive/`](archive/README.md); they are excluded
-from linting and tests.
-
 ## Development
 
 ```bash

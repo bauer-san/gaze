@@ -41,7 +41,6 @@ except ImportError:  # pragma: no cover
     AVAILABLE = False
 
 
-
 class Metrics:
     """Exports the monitor's state. Inert unless started with a port.
 

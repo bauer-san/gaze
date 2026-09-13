@@ -9,6 +9,5 @@ exclude =
     __pycache__,
     .venv,
     venv,
-    archive,
     build,
     dist
