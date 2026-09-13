@@ -11,15 +11,15 @@ is what still needs a human and a board.
 ## Status
 
 Checked on a Jetson Orin Nano Super dev kit, L4T r36.4.4 (JetPack 6.2),
-Ubuntu 22.04, Python 3.10.12, on 2026-09-12:
+Ubuntu 22.04, Python 3.10.12, on 2026-09-12 and 2026-09-13:
 
 | Section | Result |
 | --- | --- |
 | 1. Imports and backends | **pass** |
 | 2. Camera | **pass** — D435i, fw 5.17.0.10, USB 3.2, 26.1 fps through `RealSenseSource` |
-| 3. Test suite | **pass** — 103 passed, 0 skipped |
+| 3. Test suite | **pass** — 144 passed, 0 skipped |
 | 4. Calibration round trip | **pass** — four corners accepted over ssh, `calib_z` 0.649 m |
-| 5. Escalation, by hand | **partial** — warn/alert timings confirmed; 3 rows outstanding |
+| 5. Escalation, by hand | **partial** — timings and sensor fault confirmed; 2 rows outstanding |
 | 6. Performance capture | **pass** — 22.8 fps end to end; ~10.5% CPU, GR3D idle, 55 degC |
 
 Two findings came out of §2 and are now pinned in the dependency files. Both
@@ -53,9 +53,8 @@ it.
 
 Of §5, the escalation timings are confirmed from the transition log: warning
 at `away 1.0s` against `warn_after: 1.0`, alert at `away 3.0s` against
-`alert_after: 3.0`. Three rows are still outstanding and all need a person:
-the brief-glance-back hysteresis, `SENSOR FAULT` on a covered lens, and
-stepping back a metre.
+`alert_after: 3.0`. Two rows are still outstanding and both need a person:
+the brief-glance-back hysteresis, and stepping back a metre.
 
 ### The covered-lens row, and what it used to get wrong
 
@@ -81,9 +80,19 @@ Verified so far:
   face appears, which is the conjunction doing its job;
 * the thresholds are pinned in `tests/test_quality.py` against those numbers.
 
-**Not** verified: the shipping threshold of 0.05 against a real obstruction.
-That still wants a piece of paper and someone to hold it there, and it is the
-only part of this that hardware can settle.
+Confirmed on the board at the shipping threshold, against the published
+image (`MIN_DEPTH_FRACTION` 0.05, not an inverted test value), with paper
+over the lens:
+
+```
+12:57:16 WARNING attention alert -> fault (away 19.4s, tracked=False)
+12:57:24 WARNING attention fault -> alert (away 26.9s, tracked=True)
+```
+
+Note the recovery line. It returns to `alert` rather than to `attentive`
+because the operator's gaze was still outside the zone at that instant --
+uncovering the lens restores the camera, not the operator's attention. The
+two are separate conditions and the monitor does not conflate them.
 
 The image itself has not been run on the board — CI builds and publishes it,
 and nothing here has exercised it. Everything in §2 was verified against the
@@ -219,7 +228,7 @@ python3 demo.py --tui --source realsense --config config.example.yaml
 | Look away, hold | amber at ~`warn_after`, red at ~`alert_after` |
 | Look back briefly, away again | stays red — hysteresis, does not flicker clear |
 | Look back and hold | clears after ~`clear_after` |
-| Cover the lens | `SENSOR FAULT` after ~`fault_after` (untested at the shipping threshold) |
+| Cover the lens | `SENSOR FAULT` after ~`fault_after` |
 | Step back a metre and repeat | zone edges hold (depth compensation) |
 
 The last row is the one worth being fussy about. The arithmetic has been
