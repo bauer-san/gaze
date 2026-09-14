@@ -90,8 +90,13 @@ Two Raspberry Pi traps worth knowing before you start:
   either MediaPipe or pyrealsense2, and there is no workaround.
 * **Raspberry Pi OS Bookworm ships Python 3.11, which is the one version with
   no aarch64 pyrealsense2 wheel** (3.9, 3.10 and 3.12 all have one). A native
-  `pip install` on the stock OS fails for that reason alone. The container
-  pins Python 3.12 and sidesteps it, which is the main argument for using it.
+  `pip install` on the stock OS fails for that reason alone.
+* **And 3.12 is a trap.** Its wheel exists, resolves and installs, then fails
+  at import: every aarch64 pyrealsense2 wheel is tagged `manylinux2014`
+  (glibc 2.17) but cp312 actually needs glibc 2.38, and Bookworm has 2.36.
+  cp310 needs 2.34 and is fine. The container pins Python 3.10 for that
+  reason, which is the main argument for using it rather than fighting the
+  host.
 
 A Kinect v1 is supported as legacy and needs `libfreenect` built from source.
 

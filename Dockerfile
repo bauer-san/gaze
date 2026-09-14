@@ -8,8 +8,9 @@
 #   jetson  -- Jetson Orin Nano Super and friends (JetPack 6 / L4T r36).
 #              Everything installs from PyPI here too, except OpenCV, which
 #              comes from apt because the PyPI wheels have no GStreamer.
-#   pi      -- Raspberry Pi 4 on 64-bit Raspberry Pi OS. Pins Python 3.12,
-#              because the version Pi OS ships has no RealSense wheel.
+#   pi      -- Raspberry Pi 4 on 64-bit Raspberry Pi OS. Pins Python 3.10:
+#              the version Pi OS ships has no RealSense wheel, and the next
+#              one up has a wheel that will not load there.
 #
 #   docker compose build gaze
 #   docker compose --profile jetson build gaze-jetson
@@ -147,18 +148,32 @@ CMD ["python3", "demo.py", "--config", "config.example.yaml", "--headless"]
 # already runs on the CPU through XNNPACK, so nothing is lost relative to the
 # Jetson except speed.
 #
-# Python 3.12 is not arbitrary. pyrealsense2 publishes aarch64 wheels for
-# cp39, cp310 and cp312 -- but not cp311, which is exactly what Raspberry Pi
-# OS Bookworm ships. A native `pip install` on the stock OS therefore fails,
-# and pinning the interpreter here is the main thing this image buys you.
+# Python 3.10 is not arbitrary, and it took two goes to get right.
+#
+# pyrealsense2 publishes aarch64 wheels for cp39, cp310 and cp312, but not
+# cp311 -- which is exactly what Raspberry Pi OS Bookworm ships, so a native
+# `pip install` on the stock OS fails outright. Pinning the interpreter is the
+# main thing this image buys you.
+#
+# 3.12 looks like the obvious pin and does not work. Every one of those wheels
+# is tagged manylinux2014, which claims glibc 2.17, and the tags understate
+# what the binaries actually need:
+#
+#     cp39   GLIBC_2.28      cp310  GLIBC_2.34      cp312  GLIBC_2.38
+#
+# Bookworm -- Debian's and the Pi's -- has 2.36, so the cp312 wheel resolves,
+# installs, and then fails at import with a missing GLIBC_2.38. Only cp310 is
+# both present and loadable here, and it is the version already proven on the
+# Jetson. The check at the end of this stage exists because pip resolution
+# cannot catch this: the wheel is selectable, it just does not load.
 #
 # Consequence worth knowing: because the interpreter comes from the image
 # rather than from apt, OpenCV has to come from pip too, and the pip wheels
 # have no GStreamer. The D435i and USB webcams work; the CSI Pi Camera, which
 # needs libcamerasrc through GStreamer, does not. Mixing in Debian's
 # python3-opencv is not a way out -- it is built for the system Python 3.11,
-# which is the version with no RealSense wheel.
-FROM python:3.12-slim-bookworm AS pi
+# the version with no RealSense wheel at all.
+FROM python:3.10-slim-bookworm AS pi
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

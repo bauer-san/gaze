@@ -16,6 +16,12 @@
 # the depth and colour sensors, which is all this project uses. Verified on
 # L4T r36.4.4 / Python 3.10: 2.56.5 fails, 2.57.7 and 2.58.x work.
 #
+# The aarch64 wheels are all tagged manylinux2014, which claims glibc 2.17, and
+# all three understate what they actually need: cp39 GLIBC_2.28, cp310
+# GLIBC_2.34, cp312 GLIBC_2.38. Check with readelf before trusting a tag on a
+# distribution older than the wheel -- cp312 installs happily on Debian
+# bookworm (glibc 2.36) and then fails at import.
+#
 # The wheels use the V4L2 backend, not RSUSB: they need the /dev/video* nodes,
 # not just /dev/bus/usb. See docker-compose.yml for what that means for the
 # container, and jetson/README.md for running outside one.
