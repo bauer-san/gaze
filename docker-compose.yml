@@ -104,6 +104,68 @@ services:
     # is quiet because nothing is wrong. Restart it, and watch the logs.
     restart: unless-stopped
 
+  # Raspberry Pi 4, 64-bit Raspberry Pi OS. No NVIDIA runtime and no Tegra
+  # userspace to mount -- a Pi is a plain arm64 box. Frame rate is materially
+  # lower than the Jetson's, so --alpha raises the gaze smoothing to match:
+  # filter_alpha is per frame while every threshold is in seconds, and at a low
+  # frame rate the default lags longer than warn_after. See README.md.
+  #
+  #     docker compose --profile pi pull gaze-pi
+  #     docker compose --profile calibrate-pi run --rm calibrate-pi   # once
+  #     docker compose --profile pi up -d gaze-pi
+  gaze-pi:
+    profiles: ["pi"]
+    build:
+      context: .
+      target: pi
+    image: ${GAZE_PI_IMAGE:-ghcr.io/bauer-san/gaze:pi}
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
+    ports:
+      - "${GAZE_METRICS_PORT:-9091}:9091"
+    volumes:
+      - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - gaze-calibration:/var/lib/gaze_monitor
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --alpha
+      - "0.35"
+      - --headless
+    restart: unless-stopped
+
+  # Commissioning on a Pi, over ssh. Same procedure as calibrate-tui.
+  calibrate-pi:
+    profiles: ["calibrate-pi"]
+    image: ${GAZE_PI_IMAGE:-ghcr.io/bauer-san/gaze:pi}
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
+    volumes:
+      - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - gaze-calibration:/var/lib/gaze_monitor
+    tty: true
+    stdin_open: true
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --recalibrate
+      - --tui
+    restart: "no"
+
   # One-off commissioning run over ssh: prompts and a status line in the
   # terminal, no display needed. `run` (not `up`) is required -- this wants a
   # terminal, which is what tty/stdin_open below provide.

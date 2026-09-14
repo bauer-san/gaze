@@ -2,10 +2,14 @@
 #
 # Two targets:
 #
-#   desktop -- x86_64 development. Everything installs from PyPI.
+#   desktop -- x86_64 development. Everything installs from PyPI. x86_64 only:
+#              it is built on Python 3.11, which is the one version with no
+#              aarch64 pyrealsense2 wheel. On arm64 use the pi target.
 #   jetson  -- Jetson Orin Nano Super and friends (JetPack 6 / L4T r36).
 #              Everything installs from PyPI here too, except OpenCV, which
 #              comes from apt because the PyPI wheels have no GStreamer.
+#   pi      -- Raspberry Pi 4 on 64-bit Raspberry Pi OS. Pins Python 3.12,
+#              because the version Pi OS ships has no RealSense wheel.
 #
 #   docker compose build gaze
 #   docker compose --profile jetson build gaze-jetson
@@ -137,3 +141,65 @@ VOLUME ["/var/lib/gaze_monitor"]
 # Headless by default: an installed unit has no monitor. Calibration is a
 # separate, one-off run with a display attached (see docker-compose.yml).
 CMD ["python3", "demo.py", "--config", "config.example.yaml", "--headless"]
+
+# --------------------------------------------------------------------- pi --
+# Raspberry Pi 4 (64-bit Raspberry Pi OS). No NVIDIA anything: MediaPipe
+# already runs on the CPU through XNNPACK, so nothing is lost relative to the
+# Jetson except speed.
+#
+# Python 3.12 is not arbitrary. pyrealsense2 publishes aarch64 wheels for
+# cp39, cp310 and cp312 -- but not cp311, which is exactly what Raspberry Pi
+# OS Bookworm ships. A native `pip install` on the stock OS therefore fails,
+# and pinning the interpreter here is the main thing this image buys you.
+#
+# Consequence worth knowing: because the interpreter comes from the image
+# rather than from apt, OpenCV has to come from pip too, and the pip wheels
+# have no GStreamer. The D435i and USB webcams work; the CSI Pi Camera, which
+# needs libcamerasrc through GStreamer, does not. Mixing in Debian's
+# python3-opencv is not a way out -- it is built for the system Python 3.11,
+# which is the version with no RealSense wheel.
+FROM python:3.12-slim-bookworm AS pi
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    GAZE_CALIBRATION_FILE=/var/lib/gaze_monitor/calibration.json
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+        libusb-1.0-0 \
+        v4l-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt requirements-realsense.txt ./
+RUN python3 -m pip install --upgrade pip \
+    && python3 -m pip install -r requirements.txt -r requirements-realsense.txt
+
+# Fail here rather than on someone's desk. The Python/wheel matrix above is
+# the whole reason this stage exists, so prove it rather than assume it.
+RUN python3 - <<'PY'
+import cv2
+import mediapipe as mp
+import pyrealsense2 as rs
+
+mp.solutions.face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1).close()
+rs.context()
+print(f"cv2 {cv2.__version__} | mediapipe {mp.__version__}")
+PY
+
+COPY . .
+
+RUN mkdir -p /var/lib/gaze_monitor
+VOLUME ["/var/lib/gaze_monitor"]
+
+# A Pi 4 is slower than the Jetson, and filter_alpha is per frame while every
+# threshold is in seconds, so the default smoothing is too slow at a low frame
+# rate -- see README.md. Raise it here rather than shipping a demo that warns
+# before the gaze estimate has caught up.
+CMD ["python3", "demo.py", "--config", "config.example.yaml", \
+     "--source", "realsense", "--alpha", "0.35", "--headless"]

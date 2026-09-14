@@ -28,31 +28,110 @@ This system is useful as a *supplementary* alert layer on top of proper
 guarding, and the `FAULT` state exists so that it tells you when it has
 stopped working rather than sitting there looking healthy.
 
-## Hardware
+## Try it before you buy anything
 
-| | |
-| --- | --- |
-| Camera | Intel RealSense D435i |
-| Compute | NVIDIA Jetson Orin Nano Super dev kit (JetPack 6 / L4T r36) |
-
-A plain webcam works for development, with no depth and so no distance
-compensation. Kinect v1 is supported as legacy. See
-[`jetson/README.md`](jetson/README.md) for the deployment notes.
-
-## Quick start
+The whole behaviour — calibration, tracking, escalation, metrics — runs on any
+laptop with a webcam. No special hardware, about five minutes:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-realsense.txt
-python3 demo.py --config config.example.yaml
-```
-
-The first run has no stored calibration, so it starts the commissioning
-routine. Without a RealSense to hand:
-
-```bash
+pip install -r requirements.txt
 python3 demo.py --source webcam --config config.example.yaml
 ```
+
+There is no stored calibration on a first run, so it starts commissioning:
+look at each corner of the area you want watched and press `c`. Then look away
+from it and watch the state escalate.
+
+What you will *not* see is distance compensation, because a webcam has no
+depth. That is the one thing worth buying hardware for, and the next section
+explains why.
+
+## Why a depth camera
+
+Gaze is measured as the iris's displacement within the eye — an angle, not a
+point in space. The same eye rotation sweeps a wider area the further away you
+are, so a region calibrated as "looking at the blade" only means that at the
+distance it was calibrated at. Step back a metre and the operator looking
+straight at the blade reads as looking well outside it.
+
+A depth camera fixes this: the measured distance scales the zone, so it holds
+as the operator moves. Everything else in the system works without depth, and
+the code treats a missing depth reading as "compensation off" rather than as
+an error.
+
+## Bill of materials
+
+Four tiers. Each adds one capability to the one above it.
+
+| Tier | Add | Roughly | Gets you |
+| --- | --- | --- | --- |
+| **0. Try it** | a laptop with a webcam | — | Everything except distance compensation |
+| **1. Depth** | Intel RealSense D435i, on a **USB 3** port | $300–400 | The zone holds as the operator moves |
+| **2. Appliance** | NVIDIA Jetson Orin Nano Super dev kit | $250 | Headless 24/7 operation. **This is the verified path** |
+| **2b. Cheaper appliance** | Raspberry Pi 4, 4 GB, **64-bit** Pi OS, active cooling, powered USB 3 hub | $80–120 | Same software, lower power. **Frame rate unverified** |
+
+Prices are rough and worth checking; the part names are the precise thing.
+
+**Tier 2 is what has actually been run.** Measured on the Jetson: 22.8 fps end
+to end at 640×480, ~10.5 % CPU, GPU idle, 55 °C. See
+[`jetson/CI_NOTES.md`](jetson/CI_NOTES.md) for what has been verified on
+hardware and what has not.
+
+**Tier 2b builds and its dependencies are proven to import on arm64, but it
+has never been run on a Pi.** A Cortex-A72 is materially slower than the
+Jetson's A78AE, and nobody has measured the resulting frame rate. If you take
+this path, read the `filter_alpha` note under [Configuration](#configuration)
+first — it is not a detail.
+
+Two Raspberry Pi traps worth knowing before you start:
+
+* **The OS must be 64-bit.** 32-bit Raspberry Pi OS has no usable wheels for
+  either MediaPipe or pyrealsense2, and there is no workaround.
+* **Raspberry Pi OS Bookworm ships Python 3.11, which is the one version with
+  no aarch64 pyrealsense2 wheel** (3.9, 3.10 and 3.12 all have one). A native
+  `pip install` on the stock OS fails for that reason alone. The container
+  pins Python 3.12 and sidesteps it, which is the main argument for using it.
+
+A Kinect v1 is supported as legacy and needs `libfreenect` built from source.
+
+## Running it
+
+```bash
+# any machine, from source
+pip install -r requirements.txt -r requirements-realsense.txt
+python3 demo.py --source realsense --config config.example.yaml
+```
+
+Images are built by CI and published to GHCR, so an appliance pulls rather
+than builds:
+
+```bash
+# Jetson Orin Nano
+docker compose --profile jetson pull gaze-jetson
+docker compose --profile calibrate-tui run --rm calibrate-tui   # once, over ssh
+docker compose --profile jetson up -d gaze-jetson
+
+# Raspberry Pi 4
+docker compose --profile pi pull gaze-pi
+docker compose --profile calibrate-pi run --rm calibrate-pi     # once, over ssh
+docker compose --profile pi up -d gaze-pi
+
+# x86_64 development, calibration window on the host display
+xhost +local:docker
+docker compose up gaze
+```
+
+Calibration lives in the `gaze-calibration` volume shared by every service, so
+a unit is commissioned once and every later start reuses it. Headless mode
+annunciates through the log and **requires** a stored calibration — it cannot
+run the calibration UI.
+
+The Pi image cannot use the CSI Pi Camera. Pinning Python 3.12 means OpenCV
+comes from pip, and the pip wheels have no GStreamer, which `libcamerasrc`
+needs. The D435i and USB webcams are unaffected. Debian's `python3-opencv`
+is not a way out: it targets the system Python 3.11, the version with no
+RealSense wheel.
 
 ## Commissioning
 
@@ -117,29 +196,6 @@ counters for state transitions and zone re-entries. Disabled unless a port is
 given. See [`jetson/README.md`](jetson/README.md#metrics) for why the counters
 matter more than the gauges.
 
-## Docker
-
-```bash
-# x86_64 development, with the calibration window on the host display
-xhost +local:docker
-docker compose up gaze
-```
-
-On the Jetson there is nothing to build: CI builds the image on an arm64
-runner after the tests pass and publishes it to GHCR, and the board pulls it.
-
-```bash
-docker compose --profile jetson pull gaze-jetson        # ghcr.io/bauer-san/gaze:jetson
-
-docker compose --profile calibrate run --rm calibrate   # once, with a display
-docker compose --profile jetson up -d gaze-jetson       # headless from then on
-```
-
-Calibration lives in the `gaze-calibration` volume shared by all three
-services, so the unit is commissioned once and every later start reuses it.
-Headless mode annunciates through the log and **requires** a stored
-calibration — it cannot run the calibration UI.
-
 ## Configuration
 
 [`config.example.yaml`](config.example.yaml) documents every setting and the
@@ -155,6 +211,27 @@ The thresholds worth thinking about for a given installation:
 | `clear_after` | 0.4 s | Time back on target before an alarm clears |
 | `fault_after` | 1.0 s | Unusable frames before declaring a sensor fault |
 | `zone_margin` | 0.1 | Tolerance around the calibrated area |
+| `filter_alpha` | 0.12 | Gaze smoothing — **per frame, not per second** |
+
+### filter_alpha depends on your frame rate
+
+Every threshold above is in seconds. `filter_alpha` is not: it is an
+exponential moving average applied once per frame, so its time constant is
+`1/alpha` frames divided by whatever frame rate you actually get.
+
+| `filter_alpha` | 30 fps | 22.8 fps (Jetson, measured) | 6 fps |
+| --- | --- | --- | --- |
+| 0.12 (default) | 0.28 s | 0.37 s | **1.39 s** |
+| 0.35 | 0.10 s | 0.13 s | 0.48 s |
+
+At the Jetson's measured rate the default sits comfortably inside
+`warn_after: 1.0`. On slower hardware it does not: at 6 fps the gaze estimate
+is still catching up when the monitor has already decided to warn, which makes
+the tuning incoherent rather than merely sluggish. The Pi image raises it to
+0.35 for exactly this reason.
+
+Check your actual frame rate before trusting the default — `--tui` shows it
+live, or scrape `gaze_frame_rate_fps`.
 
 ## Layout
 
@@ -165,11 +242,15 @@ The thresholds worth thinking about for a given installation:
 | [`capture.py`](gaze_monitor/capture.py) | Camera backends. Normalises all depth to **metres** at the source. |
 | [`config.py`](gaze_monitor/config.py) | Defaults, YAML loading, CLI merge, validation |
 | [`gaze.py`](gaze_monitor/gaze.py) | Iris geometry and smoothing |
+| [`metrics.py`](gaze_monitor/metrics.py) | Prometheus exporter. Inert unless a port is set |
+| [`quality.py`](gaze_monitor/quality.py) | Whether a frame is usable — catches a blocked lens |
+| [`terminal.py`](gaze_monitor/terminal.py) | The `--tui` annunciator, for running over ssh |
 | [`ui.py`](gaze_monitor/ui.py) | The run loop and rendering |
 
-`attention`, `calibration`, `config` and `gaze` import nothing heavier than
-numpy, so the logic that decides whether to alarm is tested without a camera,
-OpenCV or MediaPipe.
+`attention`, `calibration`, `config`, `gaze`, `metrics`, `quality` and
+`terminal` import nothing heavier than numpy, so the logic that decides
+whether to alarm is tested without a camera, OpenCV or MediaPipe. That is why
+CI can cover most of this on an x86_64 runner with no vision stack at all.
 
 ## Development
 

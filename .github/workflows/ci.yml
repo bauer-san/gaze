@@ -81,7 +81,7 @@ jobs:
             echo "build=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # The Jetson image, built on a native arm64 runner (free for public
+  # The arm64 images, built on a native arm64 runner (free for public
   # repositories) so nothing has to run under QEMU. `needs: test` is what makes
   # this "publish only after CI passes" -- a red test matrix never reaches here.
   #
@@ -89,13 +89,21 @@ jobs:
   # caught before merge without publishing anything. The image build is the
   # only place the aarch64 dependency set is exercised: the runners for `test`
   # are x86_64, and none of the hardware backends are importable there.
-  jetson-image:
+  images:
     needs: [test, image-changes]
     if: needs.image-changes.outputs.build == 'true'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both are arm64 and both are built on this runner natively. The pi
+        # target has never been run on a Raspberry Pi: its build-time checks
+        # prove the dependency set resolves and imports on arm64, which is the
+        # part that was in doubt, but not that it is fast enough to be useful.
+        target: [jetson, pi]
 
     steps:
       - uses: actions/checkout@v4
@@ -115,20 +123,20 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          # `jetson` is the moving tag the board's compose file pulls;
-          # `jetson-<sha>` is the immutable one to pin a commissioned unit to.
+          # `<target>` is the moving tag a compose file pulls;
+          # `<target>-<sha>` is the immutable one to pin a commissioned unit to.
           tags: |
-            type=raw,value=jetson,enable={{is_default_branch}}
-            type=sha,prefix=jetson-
+            type=raw,value=${{ matrix.target }},enable={{is_default_branch}}
+            type=sha,prefix=${{ matrix.target }}-
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: jetson
+          target: ${{ matrix.target }}
           platforms: linux/arm64
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
