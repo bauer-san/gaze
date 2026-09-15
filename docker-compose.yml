@@ -44,8 +44,8 @@ services:
   gaze:
     build:
       context: .
-      target: desktop
-    image: gaze-monitor:desktop
+      target: x86
+    image: gaze-monitor:x86
     <<: *realsense-device-access
     environment:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
@@ -103,6 +103,65 @@ services:
     # An attention monitor that has exited is indistinguishable from one that
     # is quiet because nothing is wrong. Restart it, and watch the logs.
     restart: unless-stopped
+
+  # A small form factor PC as the installed unit -- an HP EliteDesk Mini or
+  # similar. No GPU is involved (MediaPipe runs on the CPU through XNNPACK),
+  # and an x86 CPU with AVX2 outruns the Jetson at this workload, so the
+  # default filter_alpha tuned for 30 fps is the right one here.
+  #
+  #     docker compose --profile x86 pull gaze-x86
+  #     docker compose --profile calibrate-x86 run --rm calibrate-x86   # once
+  #     docker compose --profile x86 up -d gaze-x86
+  gaze-x86:
+    profiles: ["x86"]
+    build:
+      context: .
+      target: x86
+    image: ${GAZE_X86_IMAGE:-ghcr.io/bauer-san/gaze:x86}
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
+    ports:
+      - "${GAZE_METRICS_PORT:-9091}:9091"
+    volumes:
+      - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - gaze-calibration:/var/lib/gaze_monitor
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --headless
+    restart: unless-stopped
+
+  # Commissioning on a small form factor PC, over ssh.
+  calibrate-x86:
+    profiles: ["calibrate-x86"]
+    image: ${GAZE_X86_IMAGE:-ghcr.io/bauer-san/gaze:x86}
+    <<: *realsense-device-access
+    environment:
+      GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
+    volumes:
+      - /dev:/dev
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - gaze-calibration:/var/lib/gaze_monitor
+    tty: true
+    stdin_open: true
+    command:
+      - python3
+      - demo.py
+      - --config
+      - config.example.yaml
+      - --source
+      - realsense
+      - --recalibrate
+      - --tui
+    restart: "no"
 
   # Raspberry Pi 4, 64-bit Raspberry Pi OS. No NVIDIA runtime and no Tegra
   # userspace to mount -- a Pi is a plain arm64 box. Frame rate is materially

@@ -81,9 +81,10 @@ jobs:
             echo "build=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # The arm64 images, built on a native arm64 runner (free for public
-  # repositories) so nothing has to run under QEMU. `needs: test` is what makes
-  # this "publish only after CI passes" -- a red test matrix never reaches here.
+  # The deployable images. Each is built natively on a runner of its own
+  # architecture, so nothing runs under QEMU -- arm64 runners are free for
+  # public repositories. `needs: test` is what makes this "publish only after
+  # CI passes": a red test matrix never reaches here.
   #
   # Pull requests build the image but do not push it, so a broken Dockerfile is
   # caught before merge without publishing anything. The image build is the
@@ -92,18 +93,28 @@ jobs:
   images:
     needs: [test, image-changes]
     if: needs.image-changes.outputs.build == 'true'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        # Both are arm64 and both are built on this runner natively. The pi
-        # target has never been run on a Raspberry Pi: its build-time checks
-        # prove the dependency set resolves and imports on arm64, which is the
-        # part that was in doubt, but not that it is fast enough to be useful.
-        target: [jetson, pi]
+        # Each target names the runner whose architecture it is built for.
+        # The pi target has never been run on a Raspberry Pi: its build-time
+        # checks prove the dependency set resolves and imports on arm64, which
+        # is the part that was in doubt, but not that it is fast enough to be
+        # useful.
+        include:
+          - target: x86
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - target: jetson
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+          - target: pi
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +145,7 @@ jobs:
         with:
           context: .
           target: ${{ matrix.target }}
-          platforms: linux/arm64
+          platforms: ${{ matrix.platform }}
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

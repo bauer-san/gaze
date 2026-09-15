@@ -69,7 +69,8 @@ Four tiers. Each adds one capability to the one above it.
 | **0. Try it** | a laptop with a webcam | — | Everything except distance compensation |
 | **1. Depth** | Intel RealSense D435i, on a **USB 3** port | $300–400 | The zone holds as the operator moves |
 | **2. Appliance** | NVIDIA Jetson Orin Nano Super dev kit | $400 (2026 tariffs) | Headless 24/7 operation. **This is the verified path** |
-| **2b. Cheaper appliance** | Raspberry Pi 4, 4 GB, **64-bit** Pi OS, active cooling, powered USB 3 hub | $80–120 | Same software, lower power. **Frame rate unverified** |
+| **2b. Small form factor PC** | Any x86_64 mini PC with USB 3 — an HP EliteDesk Mini, Intel NUC or similar | $100–200 used | Headless operation, and the easiest route to an industrial fanless box later |
+| **2c. Cheapest** | Raspberry Pi 4, 4 GB, **64-bit** Pi OS, active cooling, powered USB 3 hub | $80–120 | Same software, lower power. **Frame rate unverified** |
 
 Prices are rough and worth checking; the part names are the precise thing.
 
@@ -78,7 +79,14 @@ to end at 640×480, ~10.5 % CPU, GPU idle, 55 °C. See
 [`jetson/CI_NOTES.md`](jetson/CI_NOTES.md) for what has been verified on
 hardware and what has not.
 
-**Tier 2b builds and its dependencies are proven to import on arm64, but it
+**Tier 2b needs no GPU.** MediaPipe runs on the CPU through XNNPACK — on the
+Jetson the GPU was measured at flat zero utilisation for an entire run — so
+what matters is CPU, and an x86 CPU with AVX2 outruns the Jetson here. A
+second-hand mini PC is the cheapest way to a *fast* unit, and it is also the
+smoothest path to a plant installation, because fanless IP-rated industrial
+x86 box PCs are a commodity while sealed arm SBCs are not.
+
+**Tier 2c builds and its dependencies are proven to import on arm64, but it
 has never been run on a Pi.** A Cortex-A72 is materially slower than the
 Jetson's A78AE, and nobody has measured the resulting frame rate. If you take
 this path, read the `filter_alpha` note under [Configuration](#configuration)
@@ -121,6 +129,11 @@ docker compose --profile jetson up -d gaze-jetson
 docker compose --profile pi pull gaze-pi
 docker compose --profile calibrate-pi run --rm calibrate-pi     # once, over ssh
 docker compose --profile pi up -d gaze-pi
+
+# Small form factor PC (HP EliteDesk Mini, NUC, ...)
+docker compose --profile x86 pull gaze-x86
+docker compose --profile calibrate-x86 run --rm calibrate-x86   # once, over ssh
+docker compose --profile x86 up -d gaze-x86
 
 # x86_64 development, calibration window on the host display
 xhost +local:docker

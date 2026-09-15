@@ -2,9 +2,10 @@
 #
 # Two targets:
 #
-#   desktop -- x86_64 development. Everything installs from PyPI. x86_64 only:
-#              it is built on Python 3.11, which is the one version with no
-#              aarch64 pyrealsense2 wheel. On arm64 use the pi target.
+#   x86     -- x86_64, for development and for deployment on a small form
+#              factor PC. Everything installs from PyPI. The Python version
+#              trap that constrains the arm64 targets does not exist here:
+#              every version has an x86_64 wheel.
 #   jetson  -- Jetson Orin Nano Super and friends (JetPack 6 / L4T r36).
 #              Everything installs from PyPI here too, except OpenCV, which
 #              comes from apt because the PyPI wheels have no GStreamer.
@@ -23,8 +24,16 @@
 # the jetson stage's FROM. An ARG after a FROM belongs to that stage only.
 ARG L4T_TAG=r36.2.0
 
-# ---------------------------------------------------------------- desktop --
-FROM python:3.11-slim AS desktop
+# -------------------------------------------------------------------- x86 --
+# Development, and deployment on a small form factor PC. Nothing here uses a
+# GPU: MediaPipe runs on the CPU through XNNPACK, and on x86_64 that means
+# AVX2, so a mid-range desktop CPU comfortably outruns the Jetson at this
+# workload.
+#
+# Python 3.12 because it is one of the versions the test matrix actually
+# covers. Unlike arm64 the choice is otherwise free -- every version has
+# x86_64 wheels for the whole dependency set.
+FROM python:3.12-slim AS x86
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -48,11 +57,24 @@ COPY requirements.txt requirements-realsense.txt ./
 RUN python3 -m pip install --upgrade pip \
     && python3 -m pip install -r requirements.txt -r requirements-realsense.txt
 
+# The same check the arm64 stages carry. It has caught a real failure on
+# each of them -- an install that resolves is not an install that imports.
+RUN python3 - <<'PYCHECK'
+import cv2
+import mediapipe as mp
+import pyrealsense2 as rs
+
+mp.solutions.face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1).close()
+rs.context()
+print(f"cv2 {cv2.__version__} | mediapipe {mp.__version__}")
+PYCHECK
+
 COPY . .
 
 RUN mkdir -p /var/lib/gaze_monitor
 VOLUME ["/var/lib/gaze_monitor"]
 
+# Windowed by default: this is the one target likely to have a display.
 CMD ["python3", "demo.py", "--config", "config.example.yaml"]
 
 # ----------------------------------------------------------------- jetson --
