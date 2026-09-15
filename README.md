@@ -68,7 +68,7 @@ Four tiers. Each adds one capability to the one above it.
 | --- | --- | --- | --- |
 | **0. Try it** | a laptop with a webcam | — | Everything except distance compensation |
 | **1. Depth** | Intel RealSense D435i, on a **USB 3** port | $300–400 | The zone holds as the operator moves |
-| **2. Appliance** | NVIDIA Jetson Orin Nano Super dev kit | $250 | Headless 24/7 operation. **This is the verified path** |
+| **2. Appliance** | NVIDIA Jetson Orin Nano Super dev kit | $400 (2026 tariffs) | Headless 24/7 operation. **This is the verified path** |
 | **2b. Cheaper appliance** | Raspberry Pi 4, 4 GB, **64-bit** Pi OS, active cooling, powered USB 3 hub | $80–120 | Same software, lower power. **Frame rate unverified** |
 
 Prices are rough and worth checking; the part names are the precise thing.
