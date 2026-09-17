@@ -17,6 +17,7 @@ PURE_MODULES = [
     "gaze_monitor.gaze",
     "gaze_monitor.metrics",
     "gaze_monitor.quality",
+    "gaze_monitor.safety",
     "gaze_monitor.terminal",
 ]
 

@@ -36,6 +36,7 @@ from .config import MonitorConfig
 from .gaze import GazeFilter, gaze_from_landmarks
 from .metrics import Metrics
 from .quality import depth_is_blind
+from .safety import SafetyOutput, install_signal_handlers
 
 log = logging.getLogger(__name__)
 
@@ -402,6 +403,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     else:
         log.info("No stored calibration; starting calibration.")
 
+    safety = SafetyOutput(config)
     metrics = Metrics(config.metrics_port)
     metrics.start()
     if record is not None:
@@ -450,6 +452,9 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     last_tick = time.monotonic()
 
     ui.start()
+
+    safety.start()
+    install_signal_handlers(safety)
 
     try:
         cam.start()
@@ -532,7 +537,9 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
             else:
                 status = monitor.update(now, sample, camera_ok=camera_ok)
 
+            safety.observe(status, now)
             metrics.observe(status, fps, camera_ok, captured is not None)
+            metrics.observe_safety(safety, now)
 
             ui.render(
                 calibrating=calibrating,
@@ -562,8 +569,12 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 calibrating = True
                 message = ""
     except KeyboardInterrupt:
+        # _Terminated subclasses this, so SIGTERM and Ctrl-C share the path.
         log.info("Interrupted")
     finally:
+        # Refuse the permit before anything else: the machine should not be
+        # permitted to run for the time it takes to close a camera.
+        safety.stop()
         cam.stop()
         face_mesh.close()
         ui.stop()

@@ -56,11 +56,43 @@ def test_calibration_file_becomes_a_path():
         {"sample_duration": 0.0},
         {"screen_w": 0},
         {"headless": True, "fullscreen": True},
+        # A brake threshold with nowhere to send it looks armed and is not.
+        {"brake_after": 3.0},
+        {"brake_after": -1.0},
+        {"brake_after": 3.0, "safety_host": "10.0.0.5", "safety_kind": "holding"},
+        {"safety_port": 0},
+        {"safety_unit_id": 248},
+        {"safety_address": -1},
+        {"safety_interval": 0.0},
+        # Staleness must exceed the renewal interval or nothing is ever sent.
+        {"safety_stale_after": 0.1, "safety_interval": 0.1},
     ],
 )
 def test_invalid_configurations_are_rejected(values):
     with pytest.raises(ConfigError):
         build_config(file_values=values)
+
+
+def test_the_safety_output_is_off_by_default():
+    """Nothing reaches a machine controller unless someone configured it."""
+    cfg = build_config()
+    assert cfg.brake_after == 0.0
+    assert cfg.safety_host == ""
+    assert cfg.safety_auto_arm is False
+
+
+def test_a_configured_safety_output_validates():
+    cfg = build_config(
+        file_values={
+            "brake_after": 3.0,
+            "safety_host": "127.0.0.1",
+            "safety_port": 5020,
+            "safety_kind": "register",
+            "safety_address": 40,
+        }
+    )
+    assert cfg.brake_after == 3.0
+    assert cfg.safety_kind == "register"
 
 
 def test_missing_config_file_is_not_an_error(tmp_path):

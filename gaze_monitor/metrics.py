@@ -129,6 +129,39 @@ class Metrics:
             registry=reg,
         )
 
+        # -- safety output --
+        self._safety_enabled = Gauge(
+            "gaze_safety_enabled", "1 when a safety output is configured", registry=reg
+        )
+        self._safety_armed = Gauge(
+            "gaze_safety_armed",
+            "1 once the output has been armed and may issue permits",
+            registry=reg,
+        )
+        self._safety_permitted = Gauge(
+            "gaze_safety_permitted",
+            "1 when the last write was a permit, 0 when a stop was demanded",
+            registry=reg,
+        )
+        self._safety_silent = Gauge(
+            "gaze_safety_silent",
+            "1 when renewals have stopped because the vision result went stale",
+            registry=reg,
+        )
+        self._vision_staleness = Gauge(
+            "gaze_vision_staleness_seconds",
+            "Age of the most recent vision result, as the safety output sees it",
+            registry=reg,
+        )
+        self._safety_writes = Counter(
+            "gaze_safety_writes", "Permit renewals written", registry=reg
+        )
+        self._safety_write_errors = Counter(
+            "gaze_safety_write_errors", "Permit renewals that failed", registry=reg
+        )
+        self._last_writes = 0
+        self._last_write_errors = 0
+
         for state in AttentionState:
             self._state.labels(state=state.value).set(0)
 
@@ -179,6 +212,29 @@ class Metrics:
         if status.in_zone and not self._was_in_zone:
             self._reentries.inc()
         self._was_in_zone = status.in_zone
+
+    def observe_safety(self, safety, now: float) -> None:
+        """Record the safety output's state.
+
+        The output owns absolute counts, so the deltas are applied here --
+        a Counter can only be incremented, never set.
+        """
+        if not self.enabled:
+            return
+        self._safety_enabled.set(1 if safety.enabled else 0)
+        if not safety.enabled:
+            return
+        self._safety_armed.set(1 if safety.armed else 0)
+        self._safety_permitted.set(1 if safety.last_written else 0)
+        self._safety_silent.set(1 if safety.silent else 0)
+        self._vision_staleness.set(safety.staleness(now))
+
+        if safety.writes > self._last_writes:
+            self._safety_writes.inc(safety.writes - self._last_writes)
+            self._last_writes = safety.writes
+        if safety.write_errors > self._last_write_errors:
+            self._safety_write_errors.inc(safety.write_errors - self._last_write_errors)
+            self._last_write_errors = safety.write_errors
 
     def record_transition(self, old: AttentionState, new: AttentionState) -> None:
         if self.enabled:

@@ -64,6 +64,24 @@ class MonitorConfig:
     # notices. 0 disables the check. Only applies to cameras with depth.
     min_depth_fraction: float = MIN_DEPTH_FRACTION
 
+    # -- safety output --
+    # Optional, and off unless both brake_after and safety_host are set. The
+    # output is a permit that is continuously renewed, so loss of contact
+    # means stop; see gaze_monitor.safety.
+    brake_after: float = 0.0
+    brake_on_fault: bool = False
+    safety_host: str = ""
+    safety_port: int = 502
+    safety_unit_id: int = 1
+    safety_kind: str = "coil"
+    safety_address: int = 0
+    safety_interval: float = 0.1
+    safety_stale_after: float = 0.5
+    # Skips the start-up check that the machine cannot run before permits are
+    # issued. Off by default, because arming automatically after a crash is
+    # exactly what a safety output must not do.
+    safety_auto_arm: bool = False
+
     # -- metrics --
     # TCP port for the Prometheus exporter; 0 disables it. Off by default
     # because opening a listening socket should be asked for, not assumed.
@@ -98,6 +116,38 @@ class MonitorConfig:
             raise ConfigError("zone_margin must be >= 0")
         if self.sample_duration <= 0:
             raise ConfigError("sample_duration must be > 0")
+        if self.brake_after < 0:
+            raise ConfigError("brake_after must be >= 0")
+        if self.brake_after > 0 and not self.safety_host:
+            # A brake threshold with nowhere to send it looks armed and does
+            # nothing, which is the worst state a safety feature can be in.
+            raise ConfigError(
+                "brake_after is set but safety_host is empty, so a stop could "
+                "never be demanded. Set safety_host, or set brake_after to 0."
+            )
+        if self.safety_kind not in ("coil", "register"):
+            raise ConfigError(
+                f"safety_kind must be 'coil' or 'register', got {self.safety_kind!r}"
+            )
+        if not 1 <= self.safety_port <= 65535:
+            raise ConfigError(
+                f"safety_port must be in [1, 65535], got {self.safety_port}"
+            )
+        if not 0 <= self.safety_unit_id <= 247:
+            raise ConfigError(
+                f"safety_unit_id must be in [0, 247], got {self.safety_unit_id}"
+            )
+        if self.safety_address < 0:
+            raise ConfigError("safety_address must be >= 0")
+        if self.safety_interval <= 0:
+            raise ConfigError("safety_interval must be > 0")
+        if self.safety_stale_after <= self.safety_interval:
+            # Otherwise the staleness check fires before the first renewal
+            # lands, and the output is permanently silent.
+            raise ConfigError(
+                f"safety_stale_after ({self.safety_stale_after}) must exceed "
+                f"safety_interval ({self.safety_interval})"
+            )
         if not 0 <= self.metrics_port <= 65535:
             raise ConfigError(
                 f"metrics_port must be in [0, 65535], got {self.metrics_port}"

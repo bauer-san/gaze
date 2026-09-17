@@ -124,6 +124,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Gaze smoothing factor (0-1]; lower is smoother but slower",
     )
 
+    safety = parser.add_argument_group("safety output")
+    safety.add_argument(
+        "--brake-after",
+        type=float,
+        default=None,
+        help=(
+            "Seconds of inattention before the safety output demands a stop; "
+            "0 disables. Independent of the warning thresholds."
+        ),
+    )
+    safety.add_argument(
+        "--brake-on-fault",
+        action="store_true",
+        default=None,
+        help="Also demand a stop when the camera is unusable",
+    )
+    safety.add_argument(
+        "--safety-host",
+        default=None,
+        help="Modbus/TCP host to write the run permit to; empty disables",
+    )
+    safety.add_argument("--safety-port", type=int, default=None)
+    safety.add_argument("--safety-unit-id", type=int, default=None)
+    safety.add_argument("--safety-kind", choices=["coil", "register"], default=None)
+    safety.add_argument("--safety-address", type=int, default=None)
+    safety.add_argument(
+        "--safety-auto-arm",
+        action="store_true",
+        default=None,
+        help=(
+            "Issue permits without the start-up check. Skips proving the "
+            "machine cannot run, so prefer arming with SIGUSR1."
+        ),
+    )
+
     metrics = parser.add_argument_group("metrics")
     metrics.add_argument(
         "--metrics-port",
@@ -188,6 +223,14 @@ def main(argv: list[str] | None = None) -> int:
                 "zone_margin",
                 "min_depth_fraction",
                 "metrics_port",
+                "brake_after",
+                "brake_on_fault",
+                "safety_host",
+                "safety_port",
+                "safety_unit_id",
+                "safety_kind",
+                "safety_address",
+                "safety_auto_arm",
                 "calibration_file",
             )
         }

@@ -51,6 +51,34 @@ min_depth_fraction: 0.05
 # glance back shorter than clear_after changes no state and writes no line.
 metrics_port: 9091
 
+# --- safety output --------------------------------------------------------
+# Optional, and off as shipped. When configured, the monitor continuously
+# writes a *run permit* to a machine controller over Modbus/TCP -- it does not
+# send a stop command. Loss of contact therefore means stop, so a crash, a
+# hung process or a cut cable all result in the machine not being permitted.
+#
+# That only works if the far end treats loss of communication as a demand to
+# stop. Confirm that by pulling the cable and watching the machine stop.
+#
+# brake_after is deliberately separate from warn_after/alert_after, so the
+# operator-facing thresholds can be tuned without moving the number that
+# stops a machine. 0 disables the output entirely.
+brake_after: 0.0
+brake_on_fault: false      # a fouled lens should usually be loud, not stopping
+
+safety_host: ""            # empty disables; 127.0.0.1 for a loopback test
+safety_port: 502
+safety_unit_id: 1
+safety_kind: coil          # coil (FC05) or register (FC06)
+safety_address: 0
+safety_interval: 0.1       # seconds between permit renewals
+safety_stale_after: 0.5    # vision result older than this stops renewals
+
+# Issue permits without first proving the machine cannot run. Leave false:
+# arming automatically after a crash is what a safety output must not do.
+# Arm deliberately instead, with SIGUSR1.
+safety_auto_arm: false
+
 # Gaze smoothing (0-1]. Lower is steadier but slower to react.
 filter_alpha: 0.12
 
