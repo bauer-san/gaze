@@ -380,3 +380,230 @@ def test_sigusr1_arms_only_when_an_output_is_configured():
     finally:
         signal.signal(signal.SIGTERM, prev_term)
         signal.signal(signal.SIGUSR1, prev_usr1)
+
+
+# -- transports ------------------------------------------------------------
+#
+# Three ways to reach the far end, one interface above them. What matters is
+# that the choice is made in exactly one place and that the bytes on the wire
+# are right, because neither is visible from anywhere else in the program.
+
+import os  # noqa: E402
+
+from gaze_monitor.safety import (  # noqa: E402
+    ModbusSerialBackend,
+    SerialRelayBackend,
+    create_backend,
+    destination,
+)
+
+
+def _transport_cfg(**overrides):
+    values = dict(
+        safety_transport="tcp",
+        safety_host="",
+        safety_port=502,
+        safety_serial_port="",
+        safety_baud=9600,
+        safety_parity="N",
+        safety_stopbits=1,
+        safety_bytesize=8,
+        safety_unit_id=1,
+        safety_kind="coil",
+        safety_address=0,
+        safety_relay_protocol="numato",
+        safety_relay_channel=0,
+    )
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_destination_names_the_field_that_actually_matters():
+    """Which field counts depends on the transport, and setting the wrong one
+    leaves an output that looks configured and writes nowhere."""
+    assert destination(_transport_cfg(safety_host="10.0.0.5")) == "10.0.0.5"
+    # A serial port set under the tcp transport is not a destination.
+    assert destination(_transport_cfg(safety_serial_port="/dev/ttyUSB0")) == ""
+    assert (
+        destination(
+            _transport_cfg(safety_transport="relay", safety_serial_port="/dev/ttyACM0")
+        )
+        == "/dev/ttyACM0"
+    )
+
+
+@pytest.mark.parametrize(
+    "transport, expected, extra",
+    [
+        ("tcp", "ModbusBackend", {"safety_host": "10.0.0.5"}),
+        ("rtu", "ModbusSerialBackend", {"safety_serial_port": "/dev/null"}),
+        ("relay", "SerialRelayBackend", {"safety_serial_port": "/dev/null"}),
+    ],
+)
+def test_the_transport_selects_the_backend(transport, expected, extra):
+    backend = create_backend(_transport_cfg(safety_transport=transport, **extra))
+    assert type(backend).__name__ == expected
+    assert isinstance(backend, Backend)
+
+
+def test_an_unknown_transport_is_refused_rather_than_defaulted():
+    """Falling back to tcp here would write the permit somewhere nobody
+    asked for, which is worse than not starting."""
+    with pytest.raises(ValueError, match="unknown safety_transport"):
+        create_backend(_transport_cfg(safety_transport="carrier-pigeon"))
+
+
+def test_a_serial_output_is_enabled_without_a_host():
+    out = SafetyOutput(
+        _transport_cfg(
+            safety_transport="relay",
+            safety_serial_port="/dev/ttyACM0",
+            brake_after=3.0,
+            safety_interval=0.1,
+            safety_stale_after=0.5,
+            safety_auto_arm=False,
+        )
+    )
+    assert out.enabled is True
+
+
+# -- USB relay wire format -------------------------------------------------
+
+
+def test_numato_frames_are_the_documented_ascii():
+    relay = SerialRelayBackend("/dev/null", protocol="numato", channel=0)
+    assert relay._frame(True) == b"relay on 0\r"
+    assert relay._frame(False) == b"relay off 0\r"
+
+
+def test_lcus_frames_carry_the_documented_checksum():
+    """A0, 1-based channel, state, then the low byte of their sum. The module
+    silently ignores a frame with a bad checksum, so an error here looks like
+    a dead relay rather than a bad byte."""
+    relay = SerialRelayBackend("/dev/null", protocol="lcus", channel=0)
+    assert relay._frame(True) == bytes((0xA0, 0x01, 0x01, 0xA2))
+    assert relay._frame(False) == bytes((0xA0, 0x01, 0x00, 0xA1))
+    checksum = relay._frame(True)[3]
+    assert checksum == sum(relay._frame(True)[:3]) & 0xFF
+
+
+def test_lcus_channels_are_one_based_on_the_wire():
+    """Config counts from 0 like everything else here; the module counts from
+    1. Off by one switches the neighbouring contact."""
+    relay = SerialRelayBackend("/dev/null", protocol="lcus", channel=1)
+    assert relay._frame(True) == bytes((0xA0, 0x02, 0x01, 0xA3))
+
+
+def test_an_unknown_relay_protocol_is_refused():
+    with pytest.raises(ValueError, match="protocol must be"):
+        SerialRelayBackend("/dev/null", protocol="morse")
+
+
+def test_a_channel_off_the_end_is_refused():
+    with pytest.raises(ValueError, match="channel out of range"):
+        SerialRelayBackend("/dev/null", channel=-1)
+
+
+# -- the relay against a real serial port -----------------------------------
+
+
+@pytest.fixture
+def pty():
+    """A pseudo-terminal standing in for a USB relay module.
+
+    pyserial opens the slave exactly as it would open /dev/ttyACM0, so this
+    exercises the real open, write and flush path rather than a mock of it.
+    """
+    import contextlib
+
+    master, slave = os.openpty()
+    try:
+        yield master, os.ttyname(slave)
+    finally:
+        # One test closes the master itself, to stand in for a device being
+        # unplugged, so a double close here is expected rather than a fault.
+        for fd in (master, slave):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
+def _drain(master: int, expected: int) -> bytes:
+    """Read up to ``expected`` bytes without blocking forever."""
+    import select
+
+    out = b""
+    deadline = time.monotonic() + 2.0
+    while len(out) < expected and time.monotonic() < deadline:
+        ready, _, _ = select.select([master], [], [], 0.2)
+        if ready:
+            out += os.read(master, expected - len(out))
+    return out
+
+
+def test_a_permit_reaches_a_real_serial_port(pty):
+    master, device = pty
+    relay = SerialRelayBackend(device, protocol="numato", channel=0)
+    try:
+        relay.write(True)
+        assert _drain(master, len(b"relay on 0\r")) == b"relay on 0\r"
+        relay.write(False)
+        assert _drain(master, len(b"relay off 0\r")) == b"relay off 0\r"
+    finally:
+        relay.close()
+
+
+def test_the_whole_output_drives_a_real_serial_relay(pty):
+    """End to end over a real file descriptor: unarmed refuses, armed permits,
+    inattention stops."""
+    master, device = pty
+    relay = SerialRelayBackend(device, protocol="lcus", channel=0)
+    out = SafetyOutput(_cfg(brake_after=3.0), backend=relay)
+    on = bytes((0xA0, 0x01, 0x01, 0xA2))
+    off = bytes((0xA0, 0x01, 0x00, 0xA1))
+    try:
+        out.observe(_status(away=0.0), 10.0)
+        out.tick(10.0)
+        assert _drain(master, 4) == off, "unarmed must not permit"
+
+        out.arm()
+        out.observe(_status(away=0.0), 11.0)
+        out.tick(11.0)
+        assert _drain(master, 4) == on
+
+        out.observe(_status(away=5.0), 12.0)
+        out.tick(12.0)
+        assert _drain(master, 4) == off
+    finally:
+        out.stop()
+
+
+def test_a_vanished_relay_is_counted_and_the_handle_dropped(pty):
+    """A USB module that is unplugged loses bus power, so its contact opens
+    on its own. The write failing afterwards is bookkeeping, but the handle
+    has to be dropped or a replug never recovers."""
+    master, device = pty
+    relay = SerialRelayBackend(device, protocol="numato", channel=0)
+    out = SafetyOutput(_cfg(), backend=relay)
+    out.arm()
+    out.observe(_status(), 10.0)
+    out.tick(10.0)
+    assert out.writes == 1
+
+    os.close(master)
+    relay._serial.close()  # stand in for the device disappearing
+
+    out.observe(_status(), 11.0)
+    out.tick(11.0)
+    assert out.write_errors >= 1
+    assert relay._serial is None, "a stale handle would never recover"
+
+
+def test_a_serial_modbus_backend_reports_its_line_settings():
+    """The line settings fail as silence rather than as an error, so they are
+    worth having in the log at start-up."""
+    backend = ModbusSerialBackend(
+        "/dev/null", baudrate=38400, parity="E", stopbits=2, bytesize=8, unit_id=3
+    )
+    assert "38400" in backend.describe()
+    assert "8E2" in backend.describe()
+    assert "unit 3" in backend.describe()

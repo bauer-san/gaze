@@ -151,3 +151,82 @@ def test_a_brief_glance_back_while_alarming_is_distinguishable():
         )
         is None
     )
+
+
+# -- machine state ---------------------------------------------------------
+
+
+class _FakeMachine:
+    def __init__(self, enabled=True, latest=None, reads=0, read_errors=0, age=0.0):
+        self.enabled = enabled
+        self.reads = reads
+        self.read_errors = read_errors
+        self._latest = latest
+        self._age = age
+
+    def latest(self):
+        return self._latest
+
+    def age(self, now):
+        return self._age
+
+
+def _machine_status(**overrides):
+    from gaze_monitor.machine import MachineStatus
+
+    values = dict(
+        current_a=12.3,
+        output_hz=30.0,
+        running=True,
+        stopped=False,
+        faulted=False,
+        brake_released=True,
+        raw_status=0x0402,
+        raw_fault=0,
+        read_at=1.0,
+    )
+    values.update(overrides)
+    return MachineStatus(**values)
+
+
+def test_a_missing_machine_reader_is_reported_as_absent():
+    m = Metrics(port=1)
+    m.start(serve=False)
+    m.observe_machine(_FakeMachine(enabled=False), now=1.0)
+    assert m.value("gaze_machine_enabled") == 0
+
+
+def test_machine_readings_reach_the_exporter():
+    m = Metrics(port=1)
+    m.start(serve=False)
+    m.observe_machine(_FakeMachine(latest=_machine_status(), reads=4, age=0.5), now=2.0)
+    assert m.value("gaze_machine_enabled") == 1
+    assert m.value("gaze_machine_running") == 1
+    assert m.value("gaze_machine_faulted") == 0
+    assert m.value("gaze_machine_brake_released") == 1
+    assert m.value("gaze_machine_current_amps") == pytest.approx(12.3)
+    assert m.value("gaze_machine_output_hertz") == pytest.approx(30.0)
+    assert m.value("gaze_machine_reading_age_seconds") == pytest.approx(0.5)
+    assert m.value("gaze_machine_reads_total") == 4
+
+
+def test_read_errors_accumulate_as_deltas():
+    """The reader owns absolute counts; a Counter can only be incremented."""
+    m = Metrics(port=1)
+    m.start(serve=False)
+    m.observe_machine(_FakeMachine(read_errors=2), now=1.0)
+    m.observe_machine(_FakeMachine(read_errors=5), now=2.0)
+    assert m.value("gaze_machine_read_errors_total") == 5
+
+
+def test_the_age_still_updates_while_reads_are_failing():
+    """This is the metric that distinguishes a stopped machine from a dead
+    link: the last good reading stands, but its age keeps climbing."""
+    m = Metrics(port=1)
+    m.start(serve=False)
+    m.observe_machine(
+        _FakeMachine(latest=_machine_status(running=True), age=45.0, read_errors=9),
+        now=50.0,
+    )
+    assert m.value("gaze_machine_running") == 1
+    assert m.value("gaze_machine_reading_age_seconds") == pytest.approx(45.0)

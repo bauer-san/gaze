@@ -53,12 +53,13 @@ metrics_port: 9091
 
 # --- safety output --------------------------------------------------------
 # Optional, and off as shipped. When configured, the monitor continuously
-# writes a *run permit* to a machine controller over Modbus/TCP -- it does not
-# send a stop command. Loss of contact therefore means stop, so a crash, a
-# hung process or a cut cable all result in the machine not being permitted.
+# writes a *run permit* to the machine -- it does not send a stop command.
+# Loss of contact therefore means stop, so a crash, a hung process or a
+# pulled cable all result in the machine not being permitted.
 #
-# That only works if the far end treats loss of communication as a demand to
-# stop. Confirm that by pulling the cable and watching the machine stop.
+# That only works if the far end treats loss of contact as a demand to stop.
+# Confirm it by pulling the cable and watching the machine stop, not by
+# reading a configuration page.
 #
 # brake_after is deliberately separate from warn_after/alert_after, so the
 # operator-facing thresholds can be tuned without moving the number that
@@ -66,11 +67,34 @@ metrics_port: 9091
 brake_after: 0.0
 brake_on_fault: false      # a fouled lens should usually be loud, not stopping
 
-safety_host: ""            # empty disables; 127.0.0.1 for a loopback test
+# How the permit gets there:
+#   tcp    Modbus/TCP           -- safety_host, safety_port
+#   rtu    Modbus RTU, serial   -- safety_serial_port and the line settings
+#   relay  USB relay module     -- safety_serial_port, one dry contact,
+#                                  no protocol and no addresses
+safety_transport: tcp
+
+safety_host: ""            # tcp only; empty disables; 127.0.0.1 to loop back
 safety_port: 502
+
+# rtu and relay. Line settings apply to rtu; a CDC-ACM relay ignores baud.
+safety_serial_port: ""     # e.g. /dev/ttyUSB0 (rtu) or /dev/ttyACM0 (relay)
+safety_baud: 9600
+safety_parity: N           # N, E or O
+safety_stopbits: 1
+safety_bytesize: 8
+
+# tcp and rtu.
 safety_unit_id: 1
 safety_kind: coil          # coil (FC05) or register (FC06)
 safety_address: 0
+
+# relay only. numato is line-based ASCII ("relay on 0"), which you can drive
+# from a shell with echo to prove the wiring before trusting the software.
+# lcus is the four-byte CH340 dialect.
+safety_relay_protocol: numato
+safety_relay_channel: 0
+
 safety_interval: 0.1       # seconds between permit renewals
 safety_stale_after: 0.5    # vision result older than this stops renewals
 
@@ -78,6 +102,28 @@ safety_stale_after: 0.5    # vision result older than this stops renewals
 # arming automatically after a crash is what a safety output must not do.
 # Arm deliberately instead, with SIGUSR1.
 safety_auto_arm: false
+
+# --- machine state, read only ---------------------------------------------
+# Polls a variable-frequency drive over Modbus RTU for context: running or
+# stopped, output current, fault trips. It has no write path at all, and must
+# not share a device with the safety output above -- the two are deliberately
+# separate hardware so that a bug in the reader cannot reach the machine.
+#
+# Worth having because it tells you afterwards whether the saw was actually
+# cutting when someone looked away, which the attention state alone cannot.
+machine_port: ""           # e.g. /dev/ttyUSB0; empty disables
+machine_baud: 9600
+machine_parity: N
+machine_stopbits: 1
+machine_bytesize: 8
+machine_unit_id: 1
+machine_interval: 1.0      # seconds between polls
+
+# Added to every documented register address. Several drives, LS Electric
+# among them, document an address one higher than the number that goes on the
+# wire. Get this wrong and the reads succeed and return the neighbouring
+# register, which looks plausible and is not.
+machine_address_offset: -1
 
 # Gaze smoothing (0-1]. Lower is steadier but slower to react.
 filter_alpha: 0.12

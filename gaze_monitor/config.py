@@ -25,6 +25,13 @@ log = logging.getLogger(__name__)
 SOURCE_NAMES = ("realsense", "webcam", "kinect", "jetson")
 GST_PREFIX = "gst:"
 
+# Where a safety permit can be written, and how a USB relay is spoken to.
+# Duplicated as literals in gaze_monitor.safety rather than imported, so that
+# --help and --factory-reset still work with no pymodbus and no pyserial.
+SAFETY_TRANSPORTS = ("tcp", "rtu", "relay")
+RELAY_PROTOCOLS = ("numato", "lcus")
+PARITIES = ("N", "E", "O")
+
 
 class ConfigError(ValueError):
     """The supplied configuration cannot produce a working monitor."""
@@ -65,22 +72,57 @@ class MonitorConfig:
     min_depth_fraction: float = MIN_DEPTH_FRACTION
 
     # -- safety output --
-    # Optional, and off unless both brake_after and safety_host are set. The
-    # output is a permit that is continuously renewed, so loss of contact
-    # means stop; see gaze_monitor.safety.
+    # Optional, and off unless brake_after is set together with somewhere to
+    # write. The output is a permit that is continuously renewed, so loss of
+    # contact means stop; see gaze_monitor.safety.
     brake_after: float = 0.0
     brake_on_fault: bool = False
+
+    # Where the permit goes.
+    #   tcp    Modbus/TCP           -- safety_host, safety_port
+    #   rtu    Modbus RTU, serial   -- safety_serial_port and the line settings
+    #   relay  USB relay module     -- safety_serial_port, no Modbus at all
+    safety_transport: str = "tcp"
     safety_host: str = ""
     safety_port: int = 502
+    safety_serial_port: str = ""
+    safety_baud: int = 9600
+    safety_parity: str = "N"
+    safety_stopbits: int = 1
+    safety_bytesize: int = 8
     safety_unit_id: int = 1
     safety_kind: str = "coil"
     safety_address: int = 0
+    # USB relay modules are all slightly different. "numato" is line-based
+    # ASCII over CDC-ACM, "lcus" is the four-byte CH340 dialect.
+    safety_relay_protocol: str = "numato"
+    safety_relay_channel: int = 0
     safety_interval: float = 0.1
     safety_stale_after: float = 0.5
     # Skips the start-up check that the machine cannot run before permits are
     # issued. Off by default, because arming automatically after a crash is
     # exactly what a safety output must not do.
     safety_auto_arm: bool = False
+
+    # -- machine state, read only --
+    # Polls a variable-frequency drive over Modbus RTU for context: running or
+    # stopped, what it is drawing, whether it has tripped. Nothing here can
+    # command anything. The permit is a separate output on separate hardware,
+    # and keeping the two apart is the point -- a bug in the reader cannot
+    # reach the machine. Empty machine_port disables it.
+    machine_port: str = ""
+    machine_baud: int = 9600
+    machine_parity: str = "N"
+    machine_stopbits: int = 1
+    machine_bytesize: int = 8
+    machine_unit_id: int = 1
+    # Frame address = documented address + offset. Several drives, LS Electric
+    # among them, document a communication address one higher than the number
+    # that actually goes on the wire, so -1 is right for those and 0 for a
+    # drive that does not play that game. Get it wrong and every read returns
+    # the neighbouring register, plausibly and silently.
+    machine_address_offset: int = -1
+    machine_interval: float = 1.0
 
     # -- metrics --
     # TCP port for the Prometheus exporter; 0 disables it. Off by default
@@ -118,17 +160,34 @@ class MonitorConfig:
             raise ConfigError("sample_duration must be > 0")
         if self.brake_after < 0:
             raise ConfigError("brake_after must be >= 0")
-        if self.brake_after > 0 and not self.safety_host:
+        if self.safety_transport not in SAFETY_TRANSPORTS:
+            raise ConfigError(
+                f"safety_transport must be one of {', '.join(SAFETY_TRANSPORTS)}, "
+                f"got {self.safety_transport!r}"
+            )
+        # Which field has to be filled in depends on the transport, and naming
+        # the wrong one in the error is how people end up setting both.
+        needs = (
+            "safety_host" if self.safety_transport == "tcp" else "safety_serial_port"
+        )
+        if self.brake_after > 0 and not getattr(self, needs):
             # A brake threshold with nowhere to send it looks armed and does
             # nothing, which is the worst state a safety feature can be in.
             raise ConfigError(
-                "brake_after is set but safety_host is empty, so a stop could "
-                "never be demanded. Set safety_host, or set brake_after to 0."
+                f"brake_after is set but {needs} is empty, so a stop could "
+                f"never be demanded. Set {needs}, or set brake_after to 0."
             )
         if self.safety_kind not in ("coil", "register"):
             raise ConfigError(
                 f"safety_kind must be 'coil' or 'register', got {self.safety_kind!r}"
             )
+        if self.safety_relay_protocol not in RELAY_PROTOCOLS:
+            raise ConfigError(
+                f"safety_relay_protocol must be one of {', '.join(RELAY_PROTOCOLS)}, "
+                f"got {self.safety_relay_protocol!r}"
+            )
+        if self.safety_relay_channel < 0:
+            raise ConfigError("safety_relay_channel must be >= 0")
         if not 1 <= self.safety_port <= 65535:
             raise ConfigError(
                 f"safety_port must be in [1, 65535], got {self.safety_port}"
@@ -139,6 +198,13 @@ class MonitorConfig:
             )
         if self.safety_address < 0:
             raise ConfigError("safety_address must be >= 0")
+        _check_serial_line(
+            "safety",
+            self.safety_baud,
+            self.safety_parity,
+            self.safety_stopbits,
+            self.safety_bytesize,
+        )
         if self.safety_interval <= 0:
             raise ConfigError("safety_interval must be > 0")
         if self.safety_stale_after <= self.safety_interval:
@@ -147,6 +213,28 @@ class MonitorConfig:
             raise ConfigError(
                 f"safety_stale_after ({self.safety_stale_after}) must exceed "
                 f"safety_interval ({self.safety_interval})"
+            )
+        if not 0 <= self.machine_unit_id <= 247:
+            raise ConfigError(
+                f"machine_unit_id must be in [0, 247], got {self.machine_unit_id}"
+            )
+        if self.machine_interval <= 0:
+            raise ConfigError("machine_interval must be > 0")
+        _check_serial_line(
+            "machine",
+            self.machine_baud,
+            self.machine_parity,
+            self.machine_stopbits,
+            self.machine_bytesize,
+        )
+        if self.machine_port and self.machine_port == self.safety_serial_port:
+            # Two devices can share an RS-485 bus, but not a USB relay, and
+            # this mistake reads as "the permit stopped working" rather than
+            # as a configuration error.
+            raise ConfigError(
+                "machine_port and safety_serial_port are the same device "
+                f"({self.machine_port!r}). The permit output and the drive "
+                "reader must not share a port."
             )
         if not 0 <= self.metrics_port <= 65535:
             raise ConfigError(
@@ -169,6 +257,27 @@ class MonitorConfig:
                 "headless logs and cannot calibrate; tui draws a status line "
                 "in the terminal and can."
             )
+
+
+def _check_serial_line(
+    prefix: str, baud: int, parity: str, stopbits: int, bytesize: int
+) -> None:
+    """Validate one set of serial line settings.
+
+    Shared because the safety output and the drive reader each have their own
+    port, and a mismatched line setting fails as silence rather than as an
+    error -- the hardest kind of fault to find on a two-wire bus.
+    """
+    if baud <= 0:
+        raise ConfigError(f"{prefix}_baud must be > 0, got {baud}")
+    if parity not in PARITIES:
+        raise ConfigError(
+            f"{prefix}_parity must be one of {', '.join(PARITIES)}, got {parity!r}"
+        )
+    if stopbits not in (1, 2):
+        raise ConfigError(f"{prefix}_stopbits must be 1 or 2, got {stopbits}")
+    if bytesize not in (7, 8):
+        raise ConfigError(f"{prefix}_bytesize must be 7 or 8, got {bytesize}")
 
 
 def load_config_file(path: pathlib.Path) -> dict[str, Any]:

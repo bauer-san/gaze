@@ -1,7 +1,19 @@
 """Optional safety output: a permit that has to be continuously renewed.
 
-Disabled unless configured. Nothing here runs, connects or writes anything
-until ``brake_after`` and ``safety_host`` are both set.
+Disabled unless configured. Nothing here runs, opens a port or writes
+anything until ``brake_after`` is set together with somewhere to write it.
+
+Three transports, chosen by ``safety_transport``:
+
+* ``tcp`` -- Modbus/TCP to ``safety_host``. Also what the loopback tests use.
+* ``rtu`` -- Modbus RTU over a serial port, for a device on an RS-485 bus.
+* ``relay`` -- a USB relay module, which speaks no Modbus at all and simply
+  opens and closes one contact. Unplugging it de-energises the relay, which
+  opens the contact, which is the correct failure.
+
+They differ only in how the permit reaches the far end. Everything above the
+backend -- the renewal thread, the staleness rule, the refusal until armed --
+is identical, and that is the point of the ``Backend`` interface.
 
 **The output is a permit, not a stop command, and that inversion is the whole
 design.** A naive integration sends "stop" when the operator is inattentive,
@@ -34,7 +46,7 @@ wrong at three in the morning and somebody has to work out which part failed.
 
 No OpenCV, no numpy: this is one of the modules that has to be testable on a
 machine with no vision stack, and the tests drive it against a loopback
-Modbus server with no hardware at all.
+Modbus server and a pseudo-terminal, with no hardware at all.
 """
 
 from __future__ import annotations
@@ -49,15 +61,36 @@ from .attention import AttentionState
 log = logging.getLogger(__name__)
 
 try:  # pragma: no cover - exercised by whether the import lands
-    from pymodbus.client import ModbusTcpClient
+    from pymodbus.client import ModbusSerialClient, ModbusTcpClient
 
     AVAILABLE = True
 except ImportError:  # pragma: no cover
     AVAILABLE = False
 
+try:  # pragma: no cover - only the relay transport needs it
+    import serial
+
+    SERIAL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    SERIAL_AVAILABLE = False
+
 COIL = "coil"
 REGISTER = "register"
 KINDS = (COIL, REGISTER)
+
+TCP = "tcp"
+RTU = "rtu"
+RELAY = "relay"
+TRANSPORTS = (TCP, RTU, RELAY)
+
+NUMATO = "numato"
+LCUS = "lcus"
+RELAY_PROTOCOLS = (NUMATO, LCUS)
+
+# Numato boards address relays 0-9 then A onwards; a 1- or 2-channel module
+# never leaves the first column, but getting this silently wrong on a larger
+# board would switch the wrong contact.
+_NUMATO_CHANNELS = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
 
 
 class Backend:
@@ -75,31 +108,32 @@ class Backend:
         raise NotImplementedError
 
 
-class ModbusBackend(Backend):
-    """Modbus/TCP. Reconnects on its own, because a permit writer that gives
-    up after one network blip is a permit writer that stops the machine."""
+class _ModbusBackend(Backend):
+    """The Modbus write path, independent of what carries it.
+
+    TCP and RTU differ only in how the client is constructed. The coil-or-
+    register decision, the reconnect and the error handling are identical, and
+    duplicating them across two classes is how the two quietly drift apart.
+
+    Reconnects on its own, because a permit writer that gives up after one
+    blip is a permit writer that stops the machine.
+    """
 
     def __init__(
         self,
-        host: str,
-        port: int = 502,
-        unit_id: int = 1,
-        kind: str = COIL,
-        address: int = 0,
+        client,
+        unit_id: int,
+        kind: str,
+        address: int,
+        where: str,
     ) -> None:
-        if not AVAILABLE:
-            raise RuntimeError(
-                "pymodbus is required for the safety output: "
-                "pip install -r requirements.txt"
-            )
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}, got {kind!r}")
-        self.host = host
-        self.port = port
+        self._client = client
         self.unit_id = unit_id
         self.kind = kind
         self.address = address
-        self._client = ModbusTcpClient(host, port=port)
+        self.where = where
 
     def write(self, permitted: bool) -> None:
         if not self._client.connected:
@@ -123,6 +157,216 @@ class ModbusBackend(Backend):
         except Exception:  # pragma: no cover - closing must not raise
             pass
 
+    def describe(self) -> str:
+        return f"Modbus {self.kind} {self.address} at {self.where}"
+
+
+def _require_pymodbus() -> None:
+    if not AVAILABLE:  # pragma: no cover - depends on the install
+        raise RuntimeError(
+            "pymodbus is required for the safety output: "
+            "pip install -r requirements.txt"
+        )
+
+
+class ModbusBackend(_ModbusBackend):
+    """Modbus/TCP."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int = 502,
+        unit_id: int = 1,
+        kind: str = COIL,
+        address: int = 0,
+    ) -> None:
+        _require_pymodbus()
+        self.host = host
+        self.port = port
+        super().__init__(
+            ModbusTcpClient(host, port=port),
+            unit_id=unit_id,
+            kind=kind,
+            address=address,
+            where=f"{host}:{port} unit {unit_id}",
+        )
+
+
+class ModbusSerialBackend(_ModbusBackend):
+    """Modbus RTU over a serial port, typically a USB to RS-485 adapter.
+
+    The line settings have to match the far end exactly. They fail as silence
+    rather than as an error, which on a two-wire bus is the hardest kind of
+    fault to find -- so they are configuration, not guesses.
+    """
+
+    def __init__(
+        self,
+        port: str,
+        baudrate: int = 9600,
+        parity: str = "N",
+        stopbits: int = 1,
+        bytesize: int = 8,
+        unit_id: int = 1,
+        kind: str = COIL,
+        address: int = 0,
+        timeout: float = 1.0,
+    ) -> None:
+        _require_pymodbus()
+        self.port = port
+        super().__init__(
+            # framer defaults to RTU for the serial client; left implicit
+            # rather than named, because the enum has moved once already.
+            ModbusSerialClient(
+                port,
+                baudrate=baudrate,
+                parity=parity,
+                stopbits=stopbits,
+                bytesize=bytesize,
+                timeout=timeout,
+            ),
+            unit_id=unit_id,
+            kind=kind,
+            address=address,
+            where=f"{port} {baudrate} {bytesize}{parity}{stopbits} unit {unit_id}",
+        )
+
+
+class SerialRelayBackend(Backend):
+    """A USB relay module: one contact, open or closed, and no protocol.
+
+    These modules are the cheapest possible way to get a dry contact out of a
+    PC, and their failure behaviour happens to be the one we want. Unplug the
+    module and it loses bus power, the coil de-energises, the contact opens,
+    and a machine wired to interpret an open contact as a stop does so without
+    anything in software having noticed. The write raising afterwards is a
+    courtesy, not the mechanism.
+
+    Two dialects, because there is no standard:
+
+    * ``numato``  -- line-based ASCII over CDC-ACM: ``relay on 0``. Testable
+      from a shell with ``echo``, which is most of why it is the default.
+    * ``lcus``    -- four raw bytes, CH340 based: ``A0 01 01 A2``.
+
+    The port is opened lazily and reopened after a failure, so a module that
+    is unplugged and plugged back in recovers without a restart.
+    """
+
+    def __init__(
+        self,
+        port: str,
+        protocol: str = NUMATO,
+        channel: int = 0,
+        baudrate: int = 9600,
+        timeout: float = 0.5,
+    ) -> None:
+        if not SERIAL_AVAILABLE:  # pragma: no cover - depends on the install
+            raise RuntimeError(
+                "pyserial is required for the relay transport: "
+                "pip install -r requirements.txt"
+            )
+        if protocol not in RELAY_PROTOCOLS:
+            raise ValueError(
+                f"protocol must be one of {RELAY_PROTOCOLS}, got {protocol!r}"
+            )
+        if channel < 0 or channel >= len(_NUMATO_CHANNELS):
+            raise ValueError(f"channel out of range: {channel}")
+        self.port = port
+        self.protocol = protocol
+        self.channel = channel
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self._serial = None
+
+    def _frame(self, permitted: bool) -> bytes:
+        if self.protocol == NUMATO:
+            verb = "on" if permitted else "off"
+            return f"relay {verb} {_NUMATO_CHANNELS[self.channel]}\r".encode("ascii")
+        # LCUS: 0xA0, 1-based channel, state, then the low byte of their sum.
+        body = bytes((0xA0, self.channel + 1, 1 if permitted else 0))
+        return body + bytes((sum(body) & 0xFF,))
+
+    def _open(self):
+        if self._serial is None or not self._serial.is_open:
+            # write_timeout matters more than it looks: without it a wedged
+            # USB device blocks the renewal thread forever, which stops the
+            # permit without ever counting an error.
+            self._serial = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                timeout=self.timeout,
+                write_timeout=self.timeout,
+            )
+        return self._serial
+
+    def write(self, permitted: bool) -> None:
+        try:
+            handle = self._open()
+            handle.write(self._frame(permitted))
+            handle.flush()
+            # Numato echoes the command and a prompt. Nothing reads them, so
+            # drop them rather than let the buffer fill over a long shift.
+            handle.reset_input_buffer()
+        except Exception:
+            # Drop the handle so the next renewal opens a fresh one; a stale
+            # file descriptor after a replug never recovers on its own.
+            self.close()
+            raise
+
+    def close(self) -> None:
+        handle, self._serial = self._serial, None
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:  # pragma: no cover - closing must not raise
+                pass
+
+    def describe(self) -> str:
+        return f"{self.protocol} relay channel {self.channel} at {self.port}"
+
+
+def destination(config) -> str:
+    """The configured far end, or empty if there is none.
+
+    Which field counts depends on the transport, and this is the one place
+    that knows -- the config validator names the same field in its error.
+    """
+    if getattr(config, "safety_transport", TCP) == TCP:
+        return getattr(config, "safety_host", "") or ""
+    return getattr(config, "safety_serial_port", "") or ""
+
+
+def create_backend(config) -> Backend:
+    """Build the backend ``safety_transport`` asks for."""
+    transport = getattr(config, "safety_transport", TCP)
+    if transport == RELAY:
+        return SerialRelayBackend(
+            port=getattr(config, "safety_serial_port", ""),
+            protocol=getattr(config, "safety_relay_protocol", NUMATO),
+            channel=int(getattr(config, "safety_relay_channel", 0)),
+            baudrate=int(getattr(config, "safety_baud", 9600)),
+        )
+    if transport == RTU:
+        return ModbusSerialBackend(
+            port=getattr(config, "safety_serial_port", ""),
+            baudrate=int(getattr(config, "safety_baud", 9600)),
+            parity=getattr(config, "safety_parity", "N"),
+            stopbits=int(getattr(config, "safety_stopbits", 1)),
+            bytesize=int(getattr(config, "safety_bytesize", 8)),
+            unit_id=int(getattr(config, "safety_unit_id", 1)),
+            kind=getattr(config, "safety_kind", COIL),
+            address=int(getattr(config, "safety_address", 0)),
+        )
+    if transport != TCP:
+        raise ValueError(f"unknown safety_transport {transport!r}")
+    return ModbusBackend(
+        host=getattr(config, "safety_host", ""),
+        port=int(getattr(config, "safety_port", 502)),
+        unit_id=int(getattr(config, "safety_unit_id", 1)),
+        kind=getattr(config, "safety_kind", COIL),
+        address=int(getattr(config, "safety_address", 0)),
+    )
+
 
 class SafetyOutput:
     """Renews a permit while attention is verified.
@@ -138,11 +382,12 @@ class SafetyOutput:
         self.brake_on_fault = bool(getattr(config, "brake_on_fault", False))
         self.interval = float(getattr(config, "safety_interval", 0.1))
         self.stale_after = float(getattr(config, "safety_stale_after", 0.5))
-        self._host = getattr(config, "safety_host", "") or ""
+        self._destination = destination(config)
 
-        # Enabled when there is somewhere to write: a configured host, or an
-        # injected backend, which is how the tests reach it without a network.
-        self.enabled = backend is not None or bool(self._host)
+        # Enabled when there is somewhere to write: a configured far end, or
+        # an injected backend, which is how the tests reach it with no
+        # hardware and no network.
+        self.enabled = backend is not None or bool(self._destination)
 
         self._backend = backend
         self._config = config
@@ -167,13 +412,11 @@ class SafetyOutput:
         if not self.enabled:
             return False
         if self._backend is None:
-            self._backend = ModbusBackend(
-                host=self._host,
-                port=int(getattr(self._config, "safety_port", 502)),
-                unit_id=int(getattr(self._config, "safety_unit_id", 1)),
-                kind=getattr(self._config, "safety_kind", COIL),
-                address=int(getattr(self._config, "safety_address", 0)),
-            )
+            self._backend = create_backend(self._config)
+        log.info(
+            "Safety output: %s",
+            getattr(self._backend, "describe", lambda: type(self._backend).__name__)(),
+        )
 
         if self.brake_after <= 0:
             log.warning(

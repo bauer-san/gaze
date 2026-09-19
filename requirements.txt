@@ -27,7 +27,13 @@ PyYAML==6.0.3
 # is set, and the import is guarded, so a hand-built environment without it
 # still runs.
 prometheus-client==0.26.0
-# Modbus/TCP for the optional safety output (gaze_monitor.safety). Pure
-# Python, py3-none-any, and no mandatory dependencies of its own -- the
-# serial and simulator extras are not installed. Unused unless configured.
+# Modbus for the optional safety output (gaze_monitor.safety) and for reading
+# machine state (gaze_monitor.machine). Pure Python, py3-none-any, and no
+# mandatory dependencies of its own. Unused unless configured.
 pymodbus==3.15.0
+# Serial transport. pymodbus does not depend on it (the [serial] extra is not
+# installed), and the USB relay transport does not use pymodbus at all, so it
+# is named here rather than pulled in as an extra. Pure Python, py3-none-any.
+# Both the RTU and relay transports import it lazily, so an environment
+# without it still runs everything else.
+pyserial==3.5

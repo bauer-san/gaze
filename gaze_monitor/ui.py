@@ -34,6 +34,7 @@ from .calibration import (
 from .capture import CameraError, create_source
 from .config import MonitorConfig
 from .gaze import GazeFilter, gaze_from_landmarks
+from .machine import MachineReader
 from .metrics import Metrics
 from .quality import depth_is_blind
 from .safety import SafetyOutput, install_signal_handlers
@@ -404,6 +405,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
         log.info("No stored calibration; starting calibration.")
 
     safety = SafetyOutput(config)
+    machine = MachineReader(config)
     metrics = Metrics(config.metrics_port)
     metrics.start()
     if record is not None:
@@ -454,6 +456,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     ui.start()
 
     safety.start()
+    machine.start()
     install_signal_handlers(safety)
 
     try:
@@ -540,6 +543,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
             safety.observe(status, now)
             metrics.observe(status, fps, camera_ok, captured is not None)
             metrics.observe_safety(safety, now)
+            metrics.observe_machine(machine, now)
 
             ui.render(
                 calibrating=calibrating,
@@ -575,6 +579,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
         # Refuse the permit before anything else: the machine should not be
         # permitted to run for the time it takes to close a camera.
         safety.stop()
+        machine.stop()
         cam.stop()
         face_mesh.close()
         ui.stop()

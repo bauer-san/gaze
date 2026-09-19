@@ -117,3 +117,75 @@ def test_example_config_is_valid():
     values = load_config_file(pathlib.Path("config.example.yaml"))
     cfg = build_config(file_values=values)
     assert cfg.alert_after > 0
+
+
+# -- transports and the machine reader --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"safety_transport": "carrier-pigeon"},
+        # A serial transport with only a host set: configured-looking, and
+        # writing nowhere.
+        {"brake_after": 3.0, "safety_transport": "rtu", "safety_host": "10.0.0.5"},
+        {"brake_after": 3.0, "safety_transport": "relay"},
+        {"safety_relay_protocol": "morse"},
+        {"safety_relay_channel": -1},
+        {"safety_baud": 0},
+        {"safety_parity": "Z"},
+        {"safety_stopbits": 3},
+        {"safety_bytesize": 9},
+        {"machine_unit_id": 248},
+        {"machine_interval": 0.0},
+        {"machine_parity": "X"},
+        # One serial device cannot be both the permit output and the reader.
+        {"machine_port": "/dev/ttyUSB0", "safety_serial_port": "/dev/ttyUSB0"},
+    ],
+)
+def test_invalid_transport_configurations_are_rejected(values):
+    with pytest.raises(ConfigError):
+        build_config(values)
+
+
+def test_the_error_names_the_field_the_transport_actually_needs():
+    """Naming safety_host when the transport is serial is how people end up
+    setting both and still having nothing written."""
+    with pytest.raises(ConfigError, match="safety_serial_port"):
+        build_config({"brake_after": 3.0, "safety_transport": "relay"})
+    with pytest.raises(ConfigError, match="safety_host"):
+        build_config({"brake_after": 3.0, "safety_transport": "tcp"})
+
+
+def test_a_usb_relay_output_validates():
+    cfg = build_config(
+        {
+            "brake_after": 3.0,
+            "safety_transport": "relay",
+            "safety_serial_port": "/dev/ttyACM0",
+            "safety_relay_protocol": "lcus",
+            "safety_relay_channel": 1,
+        }
+    )
+    assert cfg.safety_transport == "relay"
+    assert cfg.safety_relay_channel == 1
+
+
+def test_the_machine_reader_is_off_by_default():
+    cfg = build_config()
+    assert cfg.machine_port == ""
+    # -1 by default: the drives this was written against document an address
+    # one higher than the one that goes on the wire.
+    assert cfg.machine_address_offset == -1
+
+
+def test_the_reader_and_the_permit_may_use_different_serial_ports():
+    cfg = build_config(
+        {
+            "brake_after": 3.0,
+            "safety_transport": "relay",
+            "safety_serial_port": "/dev/ttyACM0",
+            "machine_port": "/dev/ttyUSB0",
+        }
+    )
+    assert cfg.machine_port != cfg.safety_serial_port

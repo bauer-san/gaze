@@ -162,6 +162,47 @@ class Metrics:
         self._last_writes = 0
         self._last_write_errors = 0
 
+        # -- machine state, read from the drive --
+        self._machine_enabled = Gauge(
+            "gaze_machine_enabled",
+            "1 when a machine reader is configured",
+            registry=reg,
+        )
+        self._machine_running = Gauge(
+            "gaze_machine_running",
+            "1 when the drive reports the motor turning in either direction",
+            registry=reg,
+        )
+        self._machine_faulted = Gauge(
+            "gaze_machine_faulted",
+            "1 when the drive reports a fault trip",
+            registry=reg,
+        )
+        self._machine_brake_released = Gauge(
+            "gaze_machine_brake_released",
+            "1 when the drive is asserting its brake release signal",
+            registry=reg,
+        )
+        self._machine_current = Gauge(
+            "gaze_machine_current_amps", "Drive output current", registry=reg
+        )
+        self._machine_hz = Gauge(
+            "gaze_machine_output_hertz", "Drive output frequency", registry=reg
+        )
+        self._machine_age = Gauge(
+            "gaze_machine_reading_age_seconds",
+            "Age of the most recent good read from the drive",
+            registry=reg,
+        )
+        self._machine_reads = Counter(
+            "gaze_machine_reads", "Drive polls that returned data", registry=reg
+        )
+        self._machine_read_errors = Counter(
+            "gaze_machine_read_errors", "Drive polls that failed", registry=reg
+        )
+        self._last_reads = 0
+        self._last_read_errors = 0
+
         for state in AttentionState:
             self._state.labels(state=state.value).set(0)
 
@@ -235,6 +276,34 @@ class Metrics:
         if safety.write_errors > self._last_write_errors:
             self._safety_write_errors.inc(safety.write_errors - self._last_write_errors)
             self._last_write_errors = safety.write_errors
+
+    def observe_machine(self, machine, now: float) -> None:
+        """Record what the drive last said about itself.
+
+        Read-only context. Nothing here feeds back into the attention logic or
+        the permit -- it is here so that "was the saw actually cutting?" can be
+        answered afterwards from the same dashboard as everything else.
+        """
+        if not self.enabled:
+            return
+        self._machine_enabled.set(1 if machine.enabled else 0)
+        if not machine.enabled:
+            return
+        self._machine_age.set(machine.age(now))
+        latest = machine.latest()
+        if latest is not None:
+            self._machine_running.set(1 if latest.running else 0)
+            self._machine_faulted.set(1 if latest.faulted else 0)
+            self._machine_brake_released.set(1 if latest.brake_released else 0)
+            self._machine_current.set(latest.current_a)
+            self._machine_hz.set(latest.output_hz)
+
+        if machine.reads > self._last_reads:
+            self._machine_reads.inc(machine.reads - self._last_reads)
+            self._last_reads = machine.reads
+        if machine.read_errors > self._last_read_errors:
+            self._machine_read_errors.inc(machine.read_errors - self._last_read_errors)
+            self._last_read_errors = machine.read_errors
 
     def record_transition(self, old: AttentionState, new: AttentionState) -> None:
         if self.enabled:

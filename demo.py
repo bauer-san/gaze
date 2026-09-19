@@ -141,11 +141,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also demand a stop when the camera is unusable",
     )
     safety.add_argument(
+        "--safety-transport",
+        choices=["tcp", "rtu", "relay"],
+        default=None,
+        help=(
+            "How the run permit reaches the machine: Modbus/TCP, Modbus RTU "
+            "over serial, or a USB relay module"
+        ),
+    )
+    safety.add_argument(
         "--safety-host",
         default=None,
         help="Modbus/TCP host to write the run permit to; empty disables",
     )
     safety.add_argument("--safety-port", type=int, default=None)
+    safety.add_argument(
+        "--safety-serial-port",
+        default=None,
+        help=(
+            "Serial device for the rtu and relay transports, e.g. "
+            "/dev/ttyUSB0 or /dev/ttyACM0; empty disables"
+        ),
+    )
+    safety.add_argument("--safety-baud", type=int, default=None)
+    safety.add_argument(
+        "--safety-relay-protocol",
+        choices=["numato", "lcus"],
+        default=None,
+        help="Dialect of the USB relay module",
+    )
+    safety.add_argument("--safety-relay-channel", type=int, default=None)
     safety.add_argument("--safety-unit-id", type=int, default=None)
     safety.add_argument("--safety-kind", choices=["coil", "register"], default=None)
     safety.add_argument("--safety-address", type=int, default=None)
@@ -156,6 +181,28 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Issue permits without the start-up check. Skips proving the "
             "machine cannot run, so prefer arming with SIGUSR1."
+        ),
+    )
+
+    machine = parser.add_argument_group("machine state (read only)")
+    machine.add_argument(
+        "--machine-port",
+        default=None,
+        help=(
+            "Serial device for reading drive status over Modbus RTU, e.g. "
+            "/dev/ttyUSB0; empty disables. Read-only: nothing is ever written "
+            "here, and it must not be the same device as the safety output."
+        ),
+    )
+    machine.add_argument("--machine-baud", type=int, default=None)
+    machine.add_argument("--machine-unit-id", type=int, default=None)
+    machine.add_argument(
+        "--machine-address-offset",
+        type=int,
+        default=None,
+        help=(
+            "Added to each documented register address. -1 for drives that "
+            "document an address one higher than the one on the wire."
         ),
     )
 
@@ -225,12 +272,21 @@ def main(argv: list[str] | None = None) -> int:
                 "metrics_port",
                 "brake_after",
                 "brake_on_fault",
+                "safety_transport",
                 "safety_host",
                 "safety_port",
+                "safety_serial_port",
+                "safety_baud",
+                "safety_relay_protocol",
+                "safety_relay_channel",
                 "safety_unit_id",
                 "safety_kind",
                 "safety_address",
                 "safety_auto_arm",
+                "machine_port",
+                "machine_baud",
+                "machine_unit_id",
+                "machine_address_offset",
                 "calibration_file",
             )
         }
