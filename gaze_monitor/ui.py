@@ -36,6 +36,9 @@ from .config import MonitorConfig
 from .gaze import GazeFilter, gaze_from_landmarks
 from .machine import MachineReader
 from .metrics import Metrics
+from .overlay import extract as extract_landmarks
+from .overlay import render as render_overlay
+from .preview import Preview
 from .quality import depth_is_blind
 from .safety import SafetyOutput, install_signal_handlers
 
@@ -406,6 +409,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
 
     safety = SafetyOutput(config)
     machine = MachineReader(config)
+    preview = Preview(config, renderer=render_overlay)
     metrics = Metrics(config.metrics_port)
     metrics.start()
     if record is not None:
@@ -457,6 +461,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
 
     safety.start()
     machine.start()
+    preview.start()
     install_signal_handlers(safety)
 
     try:
@@ -510,6 +515,21 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 blinded = not face_seen and depth_is_blind(
                     captured.depth_m, config.min_depth_fraction
                 )
+
+                # The preview, if anyone is watching. Pulling the landmarks
+                # out of MediaPipe's protobuf and copying the frame is all
+                # that happens here; the drawing and the JPEG encoding are
+                # done on an HTTP thread, where they cannot delay a frame.
+                if preview.wants_frames(now):
+                    preview.offer(
+                        frame,
+                        (
+                            extract_landmarks(results.multi_face_landmarks[0])
+                            if face_seen
+                            else None
+                        ),
+                        now,
+                    )
 
             camera_ok = failures < FAILURES_BEFORE_UNHEALTHY and not blinded
 
@@ -580,6 +600,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
         # permitted to run for the time it takes to close a camera.
         safety.stop()
         machine.stop()
+        preview.stop()
         cam.stop()
         face_mesh.close()
         ui.stop()

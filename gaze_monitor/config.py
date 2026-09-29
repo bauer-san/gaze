@@ -32,6 +32,10 @@ SAFETY_TRANSPORTS = ("tcp", "rtu", "relay")
 RELAY_PROTOCOLS = ("numato", "lcus")
 PARITIES = ("N", "E", "O")
 
+# Overlays the preview can draw, cheapest first. Mirrors DRAW_MODES in
+# gaze_monitor.preview, as a literal for the same reason as the tuples above.
+PREVIEW_DRAW_MODES = ("none", "irises", "contours", "mesh")
+
 
 class ConfigError(ValueError):
     """The supplied configuration cannot produce a working monitor."""
@@ -123,6 +127,22 @@ class MonitorConfig:
     # the neighbouring register, plausibly and silently.
     machine_address_offset: int = -1
     machine_interval: float = 1.0
+
+    # -- live landmark preview, a demonstration aid --
+    # Serves the annotated camera image over HTTP so the face mesh can be
+    # watched from a browser. 0 disables it, which is the default: this is
+    # live video of whoever is in front of the camera, served to anyone who
+    # can reach the port, with no authentication. Commissioning and demos
+    # only, not something to leave running on an installed machine.
+    #
+    # It cannot slow the monitor down. The capture loop only copies a frame,
+    # and only when somebody is watching; drawing and encoding happen on the
+    # HTTP threads. See gaze_monitor.preview.
+    preview_port: int = 0
+    preview_bind: str = "0.0.0.0"
+    preview_quality: int = 80
+    preview_max_fps: float = 10.0
+    preview_draw: str = "contours"
 
     # -- metrics --
     # TCP port for the Prometheus exporter; 0 disables it. Off by default
@@ -235,6 +255,27 @@ class MonitorConfig:
                 "machine_port and safety_serial_port are the same device "
                 f"({self.machine_port!r}). The permit output and the drive "
                 "reader must not share a port."
+            )
+        if not 0 <= self.preview_port <= 65535:
+            raise ConfigError(
+                f"preview_port must be in [0, 65535], got {self.preview_port}"
+            )
+        if self.preview_draw not in PREVIEW_DRAW_MODES:
+            raise ConfigError(
+                f"preview_draw must be one of {', '.join(PREVIEW_DRAW_MODES)}, "
+                f"got {self.preview_draw!r}"
+            )
+        if not 1 <= self.preview_quality <= 100:
+            raise ConfigError(
+                f"preview_quality must be in [1, 100], got {self.preview_quality}"
+            )
+        if self.preview_max_fps < 0:
+            raise ConfigError("preview_max_fps must be >= 0")
+        if self.preview_port and self.preview_port == self.metrics_port:
+            # Both want a listening socket, and the collision surfaces as
+            # whichever started second silently not being there.
+            raise ConfigError(
+                f"preview_port and metrics_port are both {self.preview_port}"
             )
         if not 0 <= self.metrics_port <= 65535:
             raise ConfigError(

@@ -206,6 +206,32 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    preview = parser.add_argument_group("live landmark preview (demo aid)")
+    preview.add_argument(
+        "--preview-port",
+        type=int,
+        default=None,
+        help=(
+            "Serve the annotated camera image over HTTP on this port; 0 "
+            "disables. Unauthenticated live video of whoever is in front of "
+            "the camera, so it is for commissioning and demonstrations, not "
+            "for an installed machine."
+        ),
+    )
+    preview.add_argument(
+        "--preview-bind",
+        default=None,
+        help="Address to listen on; 127.0.0.1 to require an ssh tunnel",
+    )
+    preview.add_argument(
+        "--preview-draw",
+        choices=["none", "irises", "contours", "mesh"],
+        default=None,
+        help="Which overlay to draw; cheapest first",
+    )
+    preview.add_argument("--preview-quality", type=int, default=None)
+    preview.add_argument("--preview-max-fps", type=float, default=None)
+
     metrics = parser.add_argument_group("metrics")
     metrics.add_argument(
         "--metrics-port",
@@ -270,6 +296,11 @@ def main(argv: list[str] | None = None) -> int:
                 "zone_margin",
                 "min_depth_fraction",
                 "metrics_port",
+                "preview_port",
+                "preview_bind",
+                "preview_draw",
+                "preview_quality",
+                "preview_max_fps",
                 "brake_after",
                 "brake_on_fault",
                 "safety_transport",

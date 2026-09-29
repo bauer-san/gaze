@@ -51,6 +51,31 @@ min_depth_fraction: 0.05
 # glance back shorter than clear_after changes no state and writes no line.
 metrics_port: 9091
 
+# --- live landmark preview -------------------------------------------------
+# A demonstration and commissioning aid, off as shipped. When a port is set,
+# the annotated camera image is served over HTTP:
+#
+#     http://<host>:8080/            the live view
+#     http://<host>:8080/frame.jpg   one snapshot
+#     http://<host>:8080/landmarks.json   the points as numbers
+#
+# Read this before enabling it: there is no authentication, and what it serves
+# is live video of whoever is standing in front of the camera. It is for
+# proving the mesh tracks during commissioning, and for putting the tracking
+# on a second screen during a demonstration. It is not for an installed
+# machine. Set preview_bind to 127.0.0.1 to require an ssh tunnel instead.
+#
+# It cannot slow the monitor down, which matters because the same loop drives
+# the safety output. The capture loop only copies a frame (0.08 ms), and only
+# while somebody is watching; drawing and JPEG encoding run on the HTTP
+# threads. A viewer that cannot keep up drops frames rather than applying any
+# backpressure.
+preview_port: 0            # e.g. 8080; 0 disables
+preview_bind: 0.0.0.0      # 127.0.0.1 to require an ssh tunnel
+preview_draw: contours     # none | irises | contours | mesh
+preview_quality: 80        # JPEG quality
+preview_max_fps: 10.0      # cap per viewer; 0 removes the cap
+
 # --- safety output --------------------------------------------------------
 # Optional, and off as shipped. When configured, the monitor continuously
 # writes a *run permit* to the machine -- it does not send a stop command.

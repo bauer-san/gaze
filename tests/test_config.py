@@ -189,3 +189,42 @@ def test_the_reader_and_the_permit_may_use_different_serial_ports():
         }
     )
     assert cfg.machine_port != cfg.safety_serial_port
+
+
+# -- the live preview -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"preview_port": 70000},
+        {"preview_draw": "wireframe"},
+        {"preview_quality": 0},
+        {"preview_quality": 101},
+        {"preview_max_fps": -1.0},
+        # Both want a listening socket; the loser just is not there.
+        {"preview_port": 9091, "metrics_port": 9091},
+    ],
+)
+def test_invalid_preview_configurations_are_rejected(values):
+    with pytest.raises(ConfigError):
+        build_config(values)
+
+
+def test_the_preview_is_off_by_default():
+    """It serves live images of a person with no authentication. Anything but
+    off by default would be wrong."""
+    cfg = build_config()
+    assert cfg.preview_port == 0
+    assert cfg.preview_draw == "contours"
+
+
+def test_a_lan_reachable_preview_validates():
+    cfg = build_config({"preview_port": 8080, "preview_bind": "0.0.0.0"})
+    assert cfg.preview_port == 8080
+    assert cfg.preview_bind == "0.0.0.0"
+
+
+def test_the_preview_and_the_metrics_exporter_may_share_a_host():
+    cfg = build_config({"preview_port": 8080, "metrics_port": 9091})
+    assert cfg.preview_port != cfg.metrics_port

@@ -87,6 +87,9 @@ services:
     # collide with this one for the host port.
     ports:
       - "${GAZE_METRICS_PORT:-9091}:9091"
+      # Live landmark preview, off unless preview_port is set. See
+      # config.example.yaml before exposing it: unauthenticated live video.
+      - "${GAZE_PREVIEW_PORT:-8080}:8080"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro
@@ -123,6 +126,9 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     ports:
       - "${GAZE_METRICS_PORT:-9091}:9091"
+      # Live landmark preview, off unless preview_port is set. See
+      # config.example.yaml before exposing it: unauthenticated live video.
+      - "${GAZE_PREVIEW_PORT:-8080}:8080"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro
@@ -183,6 +189,9 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     ports:
       - "${GAZE_METRICS_PORT:-9091}:9091"
+      # Live landmark preview, off unless preview_port is set. See
+      # config.example.yaml before exposing it: unauthenticated live video.
+      - "${GAZE_PREVIEW_PORT:-8080}:8080"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro
