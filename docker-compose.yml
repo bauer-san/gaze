@@ -17,6 +17,16 @@
 # Calibration lives in the gaze-calibration volume and is shared by all three
 # services, so the unit is commissioned once and every later start reuses it.
 #
+# The live landmark preview is off unless GAZE_PREVIEW_PORT is set. That one
+# variable enables it, tells the application which port to listen on, and
+# publishes the same port, so the two cannot drift apart:
+#
+#       GAZE_PREVIEW_PORT=8080 docker compose --profile jetson up -d gaze-jetson
+#       # then http://<this host>:8080/ from anything on the network
+#
+# It serves unauthenticated live video of whoever is in front of the camera.
+# Commissioning and demonstrations, not an installed machine.
+#
 # Every service mounts the host's /etc/localtime and /etc/timezone read-only,
 # so container log timestamps are in the board's local time rather than UTC.
 # Without it a log line has to be mentally shifted before it can be compared
@@ -87,9 +97,15 @@ services:
     # collide with this one for the host port.
     ports:
       - "${GAZE_METRICS_PORT:-9091}:9091"
-      # Live landmark preview, off unless preview_port is set. See
-      # config.example.yaml before exposing it: unauthenticated live video.
-      - "${GAZE_PREVIEW_PORT:-8080}:8080"
+      # Live landmark preview. One variable both enables it and picks the
+      # port, on either side of the mapping:
+      #
+      #     GAZE_PREVIEW_PORT=8080 docker compose --profile jetson up -d gaze-jetson
+      #
+      # Unset means off, and the app is told so below. Read the preview
+      # section of config.example.yaml before exposing it: what it serves is
+      # unauthenticated live video of whoever is in front of the camera.
+      - "${GAZE_PREVIEW_PORT:-0}:${GAZE_PREVIEW_PORT:-8080}"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro
@@ -103,6 +119,8 @@ services:
       - --source
       - realsense
       - --headless
+      - --preview-port
+      - "${GAZE_PREVIEW_PORT:-0}"
     # An attention monitor that has exited is indistinguishable from one that
     # is quiet because nothing is wrong. Restart it, and watch the logs.
     restart: unless-stopped
@@ -126,9 +144,15 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     ports:
       - "${GAZE_METRICS_PORT:-9091}:9091"
-      # Live landmark preview, off unless preview_port is set. See
-      # config.example.yaml before exposing it: unauthenticated live video.
-      - "${GAZE_PREVIEW_PORT:-8080}:8080"
+      # Live landmark preview. One variable both enables it and picks the
+      # port, on either side of the mapping:
+      #
+      #     GAZE_PREVIEW_PORT=8080 docker compose --profile jetson up -d gaze-jetson
+      #
+      # Unset means off, and the app is told so below. Read the preview
+      # section of config.example.yaml before exposing it: what it serves is
+      # unauthenticated live video of whoever is in front of the camera.
+      - "${GAZE_PREVIEW_PORT:-0}:${GAZE_PREVIEW_PORT:-8080}"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro
@@ -142,6 +166,8 @@ services:
       - --source
       - realsense
       - --headless
+      - --preview-port
+      - "${GAZE_PREVIEW_PORT:-0}"
     restart: unless-stopped
 
   # Commissioning on a small form factor PC, over ssh.
@@ -189,9 +215,15 @@ services:
       GAZE_CALIBRATION_FILE: /var/lib/gaze_monitor/calibration.json
     ports:
       - "${GAZE_METRICS_PORT:-9091}:9091"
-      # Live landmark preview, off unless preview_port is set. See
-      # config.example.yaml before exposing it: unauthenticated live video.
-      - "${GAZE_PREVIEW_PORT:-8080}:8080"
+      # Live landmark preview. One variable both enables it and picks the
+      # port, on either side of the mapping:
+      #
+      #     GAZE_PREVIEW_PORT=8080 docker compose --profile jetson up -d gaze-jetson
+      #
+      # Unset means off, and the app is told so below. Read the preview
+      # section of config.example.yaml before exposing it: what it serves is
+      # unauthenticated live video of whoever is in front of the camera.
+      - "${GAZE_PREVIEW_PORT:-0}:${GAZE_PREVIEW_PORT:-8080}"
     volumes:
       - /dev:/dev
       - /etc/localtime:/etc/localtime:ro
@@ -207,6 +239,8 @@ services:
       - --alpha
       - "0.35"
       - --headless
+      - --preview-port
+      - "${GAZE_PREVIEW_PORT:-0}"
     restart: unless-stopped
 
   # Commissioning on a Pi, over ssh. Same procedure as calibrate-tui.
