@@ -228,3 +228,14 @@ def test_a_lan_reachable_preview_validates():
 def test_the_preview_and_the_metrics_exporter_may_share_a_host():
     cfg = build_config({"preview_port": 8080, "metrics_port": 9091})
     assert cfg.preview_port != cfg.metrics_port
+
+
+def test_the_preview_draws_on_black_by_default():
+    """So enabling it serves geometry rather than a picture of a person, and
+    showing the camera has to be asked for."""
+    assert build_config().preview_background == "black"
+
+
+def test_an_unknown_preview_background_is_rejected():
+    with pytest.raises(ConfigError, match="preview_background"):
+        build_config({"preview_background": "greenscreen"})

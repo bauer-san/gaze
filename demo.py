@@ -229,6 +229,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Which overlay to draw; cheapest first",
     )
+    preview.add_argument(
+        "--preview-background",
+        choices=["black", "camera"],
+        default=None,
+        help=(
+            "Draw the landmarks on black, or over the live camera image. "
+            "Black is the default and means no picture of anyone leaves the "
+            "capture loop."
+        ),
+    )
     preview.add_argument("--preview-quality", type=int, default=None)
     preview.add_argument("--preview-max-fps", type=float, default=None)
 
@@ -299,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
                 "preview_port",
                 "preview_bind",
                 "preview_draw",
+                "preview_background",
                 "preview_quality",
                 "preview_max_fps",
                 "brake_after",

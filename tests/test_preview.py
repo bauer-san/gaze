@@ -28,6 +28,7 @@ def _cfg(**overrides):
         preview_quality=80,
         preview_max_fps=0.0,
         preview_draw="contours",
+        preview_background="camera",
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -36,21 +37,23 @@ def _cfg(**overrides):
 class _Frame:
     """Stands in for a numpy frame: the preview only ever copies it."""
 
+    shape = (480, 640, 3)
+
     def __init__(self, tag: str = "f") -> None:
         self.tag = tag
         self.copies = 0
 
     def copy(self):
         self.copies += 1
-        clone = _Frame(self.tag)
-        return clone
+        return _Frame(self.tag)
 
 
 def _renderer(calls=None):
-    def render(frame, landmarks, mode, quality):
+    def render(frame, size, landmarks, mode, quality):
+        tag = "black" if frame is None else frame.tag
         if calls is not None:
-            calls.append((frame.tag, mode, quality))
-        return b"JPEG:" + frame.tag.encode()
+            calls.append((tag, size, mode, quality))
+        return b"JPEG:" + tag.encode()
 
     return render
 
@@ -160,7 +163,7 @@ def test_the_renderer_is_given_the_configured_mode_and_quality():
     p._viewers = 1
     p.offer(_Frame("a"), None, 100.0)
     p.next_jpeg(0, timeout=1.0)
-    assert calls == [("a", "mesh", 55)]
+    assert calls == [("a", (480, 640), "mesh", 55)]
 
 
 def test_the_frame_is_copied_before_it_is_handed_over():
@@ -362,3 +365,86 @@ def test_the_capture_loop_is_not_blocked_by_a_viewer_that_never_reads():
         sock.close()
     finally:
         preview.stop()
+
+
+# -- what reaches the wire --------------------------------------------------
+
+
+def test_the_black_background_never_copies_the_camera_image():
+    """The default, and the reason this endpoint is defensible at all: with
+    no frame taken there is no picture of anybody in a buffer, in the slot, or
+    reachable over the network -- only geometry."""
+    calls = []
+    p = Preview(
+        _cfg(preview_port=1, preview_background="black"), renderer=_renderer(calls)
+    )
+    p._viewers = 1
+    frame = _Frame("secret")
+    p.offer(frame, [[0.5, 0.5, 0.0]], 100.0)
+
+    assert frame.copies == 0, "the camera image was copied anyway"
+    _, jpeg = p.next_jpeg(0, timeout=1.0)
+    assert jpeg == b"JPEG:black"
+    # The renderer still gets the size, so the canvas matches the camera.
+    assert calls[0][1] == (480, 640)
+
+
+def test_the_camera_background_still_carries_the_image():
+    calls = []
+    p = Preview(
+        _cfg(preview_port=1, preview_background="camera"), renderer=_renderer(calls)
+    )
+    p._viewers = 1
+    frame = _Frame("live")
+    p.offer(frame, None, 100.0)
+
+    assert frame.copies == 1
+    _, jpeg = p.next_jpeg(0, timeout=1.0)
+    assert jpeg == b"JPEG:live"
+
+
+def test_landmarks_are_served_whichever_background_is_chosen():
+    """The JSON route is geometry either way, and must not depend on whether
+    the pixels happened to be carried."""
+    p = Preview(_cfg(preview_port=1, preview_background="black"), renderer=_renderer())
+    p._viewers = 1
+    p.offer(_Frame(), [[0.1, 0.2, 0.3]], time.monotonic())
+    payload = json.loads(p.landmarks_json(timeout=1.0))
+    assert payload["points"] == [[0.1, 0.2, 0.3]]
+
+
+def test_an_unknown_background_falls_back_rather_than_refusing_to_start(caplog):
+    p = Preview(
+        _cfg(preview_port=_free_port(), preview_background="greenscreen"),
+        renderer=_renderer(),
+    )
+    try:
+        assert p.start() is True
+        assert p.background == "black"
+        assert "preview_background" in caplog.text
+    finally:
+        p.stop()
+
+
+def test_the_startup_warning_says_which_of_the_two_it_is(caplog):
+    """The difference between serving geometry and serving video is the whole
+    of the privacy question, so the log line has to name which one is running
+    rather than always claiming the worse case."""
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    for background, expected, forbidden in (
+        ("black", "No camera image is sent", "LIVE CAMERA"),
+        ("camera", "LIVE CAMERA IMAGES", "No camera image is sent"),
+    ):
+        caplog.clear()
+        p = Preview(
+            _cfg(preview_port=_free_port(), preview_background=background),
+            renderer=_renderer(),
+        )
+        try:
+            assert p.start() is True
+            assert expected in caplog.text
+            assert forbidden not in caplog.text
+        finally:
+            p.stop()

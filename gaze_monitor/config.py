@@ -35,6 +35,7 @@ PARITIES = ("N", "E", "O")
 # Overlays the preview can draw, cheapest first. Mirrors DRAW_MODES in
 # gaze_monitor.preview, as a literal for the same reason as the tuples above.
 PREVIEW_DRAW_MODES = ("none", "irises", "contours", "mesh")
+PREVIEW_BACKGROUNDS = ("black", "camera")
 
 
 class ConfigError(ValueError):
@@ -143,6 +144,11 @@ class MonitorConfig:
     preview_quality: int = 80
     preview_max_fps: float = 10.0
     preview_draw: str = "contours"
+    # "black" draws the landmarks on nothing, and is the default: the camera
+    # image is then never copied out of the capture loop, so the endpoint
+    # serves geometry and no picture of anyone. "camera" shows the live image
+    # underneath, which is what answers "why is tracking poor here".
+    preview_background: str = "black"
 
     # -- metrics --
     # TCP port for the Prometheus exporter; 0 disables it. Off by default
@@ -264,6 +270,12 @@ class MonitorConfig:
             raise ConfigError(
                 f"preview_draw must be one of {', '.join(PREVIEW_DRAW_MODES)}, "
                 f"got {self.preview_draw!r}"
+            )
+        if self.preview_background not in PREVIEW_BACKGROUNDS:
+            raise ConfigError(
+                f"preview_background must be one of "
+                f"{', '.join(PREVIEW_BACKGROUNDS)}, "
+                f"got {self.preview_background!r}"
             )
         if not 1 <= self.preview_quality <= 100:
             raise ConfigError(

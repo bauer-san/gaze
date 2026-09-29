@@ -59,8 +59,9 @@ metrics_port: 9091
 #     http://<host>:8080/frame.jpg   one snapshot
 #     http://<host>:8080/landmarks.json   the points as numbers
 #
-# Read this before enabling it: there is no authentication, and what it serves
-# is live video of whoever is standing in front of the camera. It is for
+# Read this before enabling it: there is no authentication. On the default
+# black background it serves only geometry, but set preview_background to
+# camera and it is live video of whoever is in front of the lens. It is for
 # proving the mesh tracks during commissioning, and for putting the tracking
 # on a second screen during a demonstration. It is not for an installed
 # machine. Set preview_bind to 127.0.0.1 to require an ssh tunnel instead.
@@ -73,6 +74,14 @@ metrics_port: 9091
 preview_port: 0            # e.g. 8080; 0 disables
 preview_bind: 0.0.0.0      # 127.0.0.1 to require an ssh tunnel
 preview_draw: contours     # none | irises | contours | mesh
+
+# What the landmarks are drawn on. "black" is the default, and with it the
+# camera image is never copied out of the capture loop: the endpoint serves
+# the mesh and nothing else, so it shows that tracking works without showing
+# who is being tracked. "camera" puts the mesh over the live picture, which
+# is what answers "why is tracking poor at this station" -- backlight,
+# framing, a lens somebody has leaned a board against.
+preview_background: black  # black | camera
 preview_quality: 80        # JPEG quality
 preview_max_fps: 10.0      # cap per viewer; 0 removes the cap
 

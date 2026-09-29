@@ -35,10 +35,11 @@ from .gaze import (
 
 log = logging.getLogger(__name__)
 
-# BGR. The mesh is deliberately dim and the landmarks that actually drive the
-# gaze estimate are bright -- the point of looking at this is to see whether
-# those six are sitting where they should, not to admire the tesselation.
-MESH_COLOUR = (90, 90, 90)
+# BGR, chosen to read on black and on a camera image alike. The mesh is one
+# colour and the landmarks that actually drive the gaze estimate are another,
+# because the point of looking at this is to see whether those six are sitting
+# where they should, not to admire the tesselation.
+MESH_COLOUR = (0, 170, 0)
 IRIS_COLOUR = (0, 255, 255)
 CORNER_COLOUR = (255, 160, 0)
 WARNING_COLOUR = (0, 0, 255)
@@ -94,13 +95,20 @@ def extract(face_landmarks) -> np.ndarray:
     )
 
 
-def render(frame, landmarks, mode: str = "contours", quality: int = 80) -> bytes:
+def render(frame, size, landmarks, mode: str = "contours", quality: int = 80) -> bytes:
     """Draw the overlay and encode to JPEG.
 
-    Draws into ``frame`` in place. That is safe because the preview hands over
-    a copy it made itself, and it saves a second one.
+    ``frame`` is the camera image, or ``None`` to draw on black. None is the
+    normal case: the preview only carries the pixels when it has been asked
+    to show them, so by default no image of anyone ever leaves the capture
+    loop and the endpoint serves geometry alone.
+
+    When a frame is given it is drawn into in place. That is safe because the
+    preview hands over a copy it made itself, and it saves a second one.
     """
-    h, w = frame.shape[:2]
+    h, w = size
+    if frame is None:
+        frame = np.zeros((h, w, 3), np.uint8)
 
     if landmarks is None or len(landmarks) == 0:
         cv2.putText(

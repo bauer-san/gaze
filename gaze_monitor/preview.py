@@ -45,6 +45,13 @@ log = logging.getLogger(__name__)
 # small fraction of it and are what anyone actually looks at.
 DRAW_MODES = ("none", "irises", "contours", "mesh")
 
+# What the landmarks are drawn on. "black" is the default and means the
+# camera image is never copied out of the capture loop at all, so the
+# endpoint serves geometry and nothing else. "camera" puts the mesh over the
+# live picture, which is what you want when the question is why tracking is
+# poor -- backlight, framing, a lens somebody has leaned a board against.
+BACKGROUNDS = ("black", "camera")
+
 # How long a one-shot request (a snapshot, or the JSON) keeps the pipeline
 # warm. Without this the loop stops offering frames the moment the last
 # stream disconnects, and /frame.jpg would answer with whatever was last
@@ -220,6 +227,7 @@ class Preview:
         self.quality = int(getattr(config, "preview_quality", 80))
         self.max_fps = float(getattr(config, "preview_max_fps", 10.0))
         self.draw = getattr(config, "preview_draw", "contours")
+        self.background = getattr(config, "preview_background", "black")
         self.enabled = self.port > 0
 
         self._renderer = renderer
@@ -255,6 +263,12 @@ class Preview:
         if self.draw not in DRAW_MODES:
             log.warning("Unknown preview_draw %r; falling back to contours", self.draw)
             self.draw = "contours"
+        if self.background not in BACKGROUNDS:
+            log.warning(
+                "Unknown preview_background %r; falling back to black",
+                self.background,
+            )
+            self.background = "black"
 
         try:
             self._server = _Server((self.bind, self.port), _Handler, self)
@@ -269,13 +283,25 @@ class Preview:
             target=self._server.serve_forever, name="gaze-preview", daemon=True
         )
         self._thread.start()
-        log.warning(
-            "Preview serving live camera images on http://%s:%d/ with no "
-            "authentication. It is a demonstration aid, not something to "
-            "leave running on an installed machine.",
-            self.bind if self.bind != "0.0.0.0" else "<this host>",
-            self.port,
-        )
+        where = self.bind if self.bind != "0.0.0.0" else "<this host>"
+        if self.background == "camera":
+            log.warning(
+                "Preview serving LIVE CAMERA IMAGES on http://%s:%d/ with no "
+                "authentication. A demonstration aid, not something to leave "
+                "running on an installed machine.",
+                where,
+                self.port,
+            )
+        else:
+            log.warning(
+                "Preview serving landmarks on http://%s:%d/ with no "
+                "authentication. No camera image is sent (preview_background "
+                "is %r). A demonstration aid, not something to leave running "
+                "on an installed machine.",
+                where,
+                self.port,
+                self.background,
+            )
         return True
 
     def stop(self) -> None:
@@ -305,13 +331,19 @@ class Preview:
     def offer(self, frame, landmarks, now: float) -> None:
         """Hand over the newest frame. Called from the capture loop.
 
-        The frame is copied because the capture backend reuses its buffer, and
-        an HTTP thread encoding a frame that is being overwritten underneath it
-        produces a torn image at best.
+        On the default black background the pixels are not taken at all, only
+        the frame's size. That is the cheaper path and the more defensible
+        one: no image of anybody is copied, held in a buffer, or reachable
+        over the network.
+
+        When the camera image is wanted it is copied, because the capture
+        backend reuses its buffer and an HTTP thread encoding a frame that is
+        being overwritten underneath it produces a torn image at best.
         """
         if not self.wants_frames(now):
             return
-        self._slot.put((frame.copy(), landmarks, now))
+        image = frame.copy() if self.background == "camera" else None
+        self._slot.put((image, frame.shape[:2], landmarks, now))
         self.frames_offered += 1
 
     # -- from the HTTP threads ---------------------------------------------
@@ -350,8 +382,8 @@ class Preview:
         with self._lock:
             if self._encoded_seq == seq and self._encoded is not None:
                 return self._encoded
-        frame, landmarks, _ = item
-        jpeg = self._renderer(frame, landmarks, self.draw, self.quality)
+        frame, size, landmarks, _ = item
+        jpeg = self._renderer(frame, size, landmarks, self.draw, self.quality)
         with self._lock:
             self._encoded_seq = seq
             self._encoded = jpeg
@@ -381,7 +413,7 @@ class Preview:
             seq, item = self._slot.wait(seq, timeout)
         if item is None:
             return None
-        _, landmarks, captured_at = item
+        _, _, landmarks, captured_at = item
         points = [] if landmarks is None else _as_list(landmarks)
         return json.dumps(
             {
