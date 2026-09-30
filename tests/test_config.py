@@ -132,6 +132,8 @@ def test_example_config_is_valid():
         {"brake_after": 3.0, "safety_transport": "relay"},
         {"safety_relay_protocol": "morse"},
         {"safety_relay_channel": -1},
+        {"safety_gpio_line": ""},
+        {"safety_gpio_line": "   "},
         {"safety_baud": 0},
         {"safety_parity": "Z"},
         {"safety_stopbits": 3},

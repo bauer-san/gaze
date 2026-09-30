@@ -142,11 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     safety.add_argument(
         "--safety-transport",
-        choices=["tcp", "rtu", "relay"],
+        choices=["tcp", "rtu", "relay", "gpio"],
         default=None,
         help=(
             "How the run permit reaches the machine: Modbus/TCP, Modbus RTU "
-            "over serial, or a USB relay module"
+            "over serial, a USB relay module, or one GPIO line on this board"
         ),
     )
     safety.add_argument(
@@ -171,6 +171,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dialect of the USB relay module",
     )
     safety.add_argument("--safety-relay-channel", type=int, default=None)
+    safety.add_argument(
+        "--safety-gpio-chip",
+        default=None,
+        help="GPIO character device for the gpio transport",
+    )
+    safety.add_argument(
+        "--safety-gpio-line",
+        default=None,
+        help=(
+            "GPIO line to drive the permit with, by name or by offset. "
+            "Defaults to PQ.05, which is pin 29 (GPIO01) on a Jetson Orin "
+            "Nano; run gpioinfo to see the names on another board."
+        ),
+    )
+    safety.add_argument(
+        "--safety-gpio-active-low",
+        action="store_true",
+        default=None,
+        help="Energise the relay on a low rather than a high",
+    )
     safety.add_argument("--safety-unit-id", type=int, default=None)
     safety.add_argument("--safety-kind", choices=["coil", "register"], default=None)
     safety.add_argument("--safety-address", type=int, default=None)
@@ -321,6 +341,9 @@ def main(argv: list[str] | None = None) -> int:
                 "safety_baud",
                 "safety_relay_protocol",
                 "safety_relay_channel",
+                "safety_gpio_chip",
+                "safety_gpio_line",
+                "safety_gpio_active_low",
                 "safety_unit_id",
                 "safety_kind",
                 "safety_address",

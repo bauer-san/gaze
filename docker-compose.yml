@@ -45,9 +45,16 @@ x-realsense-device-access: &realsense-device-access
   # No kernel modules are involved either way, which is just as well: a
   # container cannot load them. The IMU is a separate matter -- see
   # requirements-realsense.txt.
+  #
+  # 254 is the gpiochip major on L4T r36, needed only by the gpio safety
+  # transport (safety_transport: gpio). It is a dynamically allocated major,
+  # so confirm it with `ls -l /dev/gpiochip*` if the container reports that
+  # it cannot open the chip. Granting it costs nothing on a board that has
+  # no gpiochip, and /dev is bind-mounted whole either way.
   device_cgroup_rules:
     - "c 81:* rmw"
     - "c 189:* rmw"
+    - "c 254:* rmw"
 
 services:
   # x86_64 development and calibration, with a window on the host display.

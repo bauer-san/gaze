@@ -3,13 +3,17 @@
 Disabled unless configured. Nothing here runs, opens a port or writes
 anything until ``brake_after`` is set together with somewhere to write it.
 
-Three transports, chosen by ``safety_transport``:
+Four transports, chosen by ``safety_transport``:
 
 * ``tcp`` -- Modbus/TCP to ``safety_host``. Also what the loopback tests use.
 * ``rtu`` -- Modbus RTU over a serial port, for a device on an RS-485 bus.
 * ``relay`` -- a USB relay module, which speaks no Modbus at all and simply
   opens and closes one contact. Unplugging it de-energises the relay, which
   opens the contact, which is the correct failure.
+* ``gpio`` -- one output line on this board, driving a relay module directly
+  off the header. No adapter and no bus, which is why it is the demo choice
+  on a machine with no spare USB. Read ``GpioBackend`` before trusting its
+  failure behaviour: it is weaker than it looks.
 
 They differ only in how the permit reaches the far end. Everything above the
 backend -- the renewal thread, the staleness rule, the refusal until armed --
@@ -74,6 +78,14 @@ try:  # pragma: no cover - only the relay transport needs it
 except ImportError:  # pragma: no cover
     SERIAL_AVAILABLE = False
 
+try:  # pragma: no cover - only the gpio transport needs it
+    import gpiod
+    from gpiod.line import Direction, Value
+
+    GPIO_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    GPIO_AVAILABLE = False
+
 COIL = "coil"
 REGISTER = "register"
 KINDS = (COIL, REGISTER)
@@ -81,7 +93,18 @@ KINDS = (COIL, REGISTER)
 TCP = "tcp"
 RTU = "rtu"
 RELAY = "relay"
-TRANSPORTS = (TCP, RTU, RELAY)
+GPIO = "gpio"
+TRANSPORTS = (TCP, RTU, RELAY, GPIO)
+
+# Whoever is holding the line, as it appears in `gpioinfo`. Worth having:
+# "this line is busy" is otherwise an anonymous complaint.
+GPIO_CONSUMER = "gaze-permit"
+
+# Header pin 29 on a Jetson Orin Nano, which the 40-pin silkscreen calls
+# GPIO01 and the SoC calls PQ.05. A name rather than the offset because 105
+# is a property of this kernel and PQ.05 is a property of the board.
+GPIO_DEFAULT_CHIP = "/dev/gpiochip0"
+GPIO_DEFAULT_LINE = "PQ.05"
 
 NUMATO = "numato"
 LCUS = "lcus"
@@ -325,20 +348,181 @@ class SerialRelayBackend(Backend):
         return f"{self.protocol} relay channel {self.channel} at {self.port}"
 
 
+def parse_line_id(value) -> int | str:
+    """A GPIO line is named either by its offset or by its name.
+
+    Offsets are a property of the running kernel and names are a property of
+    the board, and neither is stable across both, so both are accepted. The
+    resolution is logged when the line is claimed, because a plausible wrong
+    answer here drives a pin nobody is watching.
+    """
+    text = str(value).strip()
+    if not text:
+        raise ValueError("a GPIO line must be given as an offset or a name")
+    try:
+        offset = int(text, 10)
+    except ValueError:
+        return text
+    if offset < 0:
+        raise ValueError(f"a GPIO line offset must be >= 0, got {offset}")
+    return offset
+
+
+class _GpiodLine:
+    """One output line, held for as long as the permit writer is alive.
+
+    Split out from ``GpioBackend`` so the backend can be tested without a
+    gpiochip: everything that touches libgpiod is in here, and the backend
+    takes this class as a replaceable argument.
+    """
+
+    def __init__(self, chip: str, line: int | str, active_low: bool) -> None:
+        with gpiod.Chip(chip) as handle:
+            info = handle.get_info()
+            self.offset = (
+                line if isinstance(line, int) else handle.line_offset_from_id(line)
+            )
+            self.name = handle.get_line_info(self.offset).name
+            chip_label = info.label
+        self._request = gpiod.request_lines(
+            chip,
+            consumer=GPIO_CONSUMER,
+            # Requested INACTIVE so that claiming the line cannot itself
+            # issue a permit. The first write decides, not the request.
+            config={
+                self.offset: gpiod.LineSettings(
+                    direction=Direction.OUTPUT,
+                    active_low=active_low,
+                    output_value=Value.INACTIVE,
+                )
+            },
+        )
+        log.info(
+            "Claimed GPIO %s line %d (%s) on %s as %r",
+            chip_label,
+            self.offset,
+            self.name or "unnamed",
+            chip,
+            GPIO_CONSUMER,
+        )
+
+    def set(self, permitted: bool) -> None:
+        self._request.set_value(
+            self.offset, Value.ACTIVE if permitted else Value.INACTIVE
+        )
+
+    def close(self) -> None:
+        # Drive the refusal before releasing, rather than relying on what the
+        # pad does once it is released. See GpioBackend.
+        try:
+            self.set(False)
+        finally:
+            self._request.release()
+
+
+class GpioBackend(Backend):
+    """One GPIO line on this board, driving a relay module off the header.
+
+    No bus, no adapter, nothing to unplug: the permit is a voltage on a
+    header pin. Wire it to the coil side of a relay and take the permit off
+    the normally-open contact, so an energised coil means permitted and a
+    de-energised coil means stop. That inversion is what makes a lost
+    container, a lost supply or a pulled jumper all read as stop.
+
+    What this transport does not give you is the thing it looks like it
+    gives you. It is tempting to argue that a killed process has its line
+    released by the kernel, so a crash drops the coil without any software
+    noticing. The release happens, but release does not mean high impedance:
+    on this SoC the pad is still reported as an output afterwards, so an
+    external pull-down cannot be assumed to win against a pad that may still
+    be driving. Measure the pin after a `kill -9` before believing otherwise.
+
+    The mitigation is therefore in software rather than in the wiring: every
+    controlled exit drives the refusal before releasing the line, so the last
+    value a latched pad could hold is stop. `docker stop`, Ctrl-C and a
+    normal shutdown all go through that path. SIGKILL and a kernel panic do
+    not, and no amount of care on this side changes that.
+
+    Which is why this is a demo transport. The production answer is a contact
+    the machine itself supervises, with the drive's own watchdog behind it,
+    so that nothing on this board has to be trusted at all.
+    """
+
+    def __init__(
+        self,
+        chip: str = GPIO_DEFAULT_CHIP,
+        line: int | str = GPIO_DEFAULT_LINE,
+        active_low: bool = False,
+        open_line=None,
+    ) -> None:
+        if open_line is None and not GPIO_AVAILABLE:  # pragma: no cover
+            raise RuntimeError(
+                "gpiod is required for the gpio transport: "
+                "pip install -r requirements.txt"
+            )
+        self.chip = chip
+        self.line = parse_line_id(line)
+        self.active_low = bool(active_low)
+        self._open_line = open_line or _GpiodLine
+        self._handle = None
+
+    def _open(self):
+        # Claimed on first write rather than at construction, so that
+        # selecting the transport is testable without a gpiochip and so that
+        # a line held by something else is reported by the renewal thread
+        # instead of preventing the monitor from starting at all.
+        if self._handle is None:
+            self._handle = self._open_line(self.chip, self.line, self.active_low)
+        return self._handle
+
+    def write(self, permitted: bool) -> None:
+        try:
+            self._open().set(permitted)
+        except Exception:
+            # Drop the handle so the next renewal re-claims the line.
+            self.close()
+            raise
+
+    def close(self) -> None:
+        handle, self._handle = self._handle, None
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:  # pragma: no cover - closing must not raise
+                pass
+
+    def describe(self) -> str:
+        suffix = " active low" if self.active_low else ""
+        return f"GPIO line {self.line} on {self.chip}{suffix}"
+
+
 def destination(config) -> str:
     """The configured far end, or empty if there is none.
 
     Which field counts depends on the transport, and this is the one place
     that knows -- the config validator names the same field in its error.
     """
-    if getattr(config, "safety_transport", TCP) == TCP:
+    transport = getattr(config, "safety_transport", TCP)
+    if transport == TCP:
         return getattr(config, "safety_host", "") or ""
+    if transport == GPIO:
+        # Both ends of this one have defaults, so choosing the transport is
+        # itself the opt-in; there is no field left empty to disable it.
+        chip = getattr(config, "safety_gpio_chip", "") or ""
+        line = str(getattr(config, "safety_gpio_line", "") or "")
+        return f"{chip}:{line}" if chip and line else ""
     return getattr(config, "safety_serial_port", "") or ""
 
 
 def create_backend(config) -> Backend:
     """Build the backend ``safety_transport`` asks for."""
     transport = getattr(config, "safety_transport", TCP)
+    if transport == GPIO:
+        return GpioBackend(
+            chip=getattr(config, "safety_gpio_chip", GPIO_DEFAULT_CHIP),
+            line=getattr(config, "safety_gpio_line", GPIO_DEFAULT_LINE),
+            active_low=bool(getattr(config, "safety_gpio_active_low", False)),
+        )
     if transport == RELAY:
         return SerialRelayBackend(
             port=getattr(config, "safety_serial_port", ""),

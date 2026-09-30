@@ -28,7 +28,7 @@ GST_PREFIX = "gst:"
 # Where a safety permit can be written, and how a USB relay is spoken to.
 # Duplicated as literals in gaze_monitor.safety rather than imported, so that
 # --help and --factory-reset still work with no pymodbus and no pyserial.
-SAFETY_TRANSPORTS = ("tcp", "rtu", "relay")
+SAFETY_TRANSPORTS = ("tcp", "rtu", "relay", "gpio")
 RELAY_PROTOCOLS = ("numato", "lcus")
 PARITIES = ("N", "E", "O")
 
@@ -87,6 +87,7 @@ class MonitorConfig:
     #   tcp    Modbus/TCP           -- safety_host, safety_port
     #   rtu    Modbus RTU, serial   -- safety_serial_port and the line settings
     #   relay  USB relay module     -- safety_serial_port, no Modbus at all
+    #   gpio   one line on this board -- safety_gpio_chip, safety_gpio_line
     safety_transport: str = "tcp"
     safety_host: str = ""
     safety_port: int = 502
@@ -102,6 +103,16 @@ class MonitorConfig:
     # ASCII over CDC-ACM, "lcus" is the four-byte CH340 dialect.
     safety_relay_protocol: str = "numato"
     safety_relay_channel: int = 0
+    # The gpio transport drives one output line straight off the 40-pin
+    # header. The default is pin 29 on a Jetson Orin Nano, which the
+    # silkscreen calls GPIO01 and the SoC calls PQ.05; the line is named
+    # rather than numbered because the offset (105) belongs to the kernel
+    # and the name belongs to the board. An offset is accepted too.
+    safety_gpio_chip: str = "/dev/gpiochip0"
+    safety_gpio_line: str = "PQ.05"
+    # For a relay board that is wired to energise on a low. Leave it off for
+    # the usual arrangement, where high means permitted.
+    safety_gpio_active_low: bool = False
     safety_interval: float = 0.1
     safety_stale_after: float = 0.5
     # Skips the start-up check that the machine cannot run before permits are
@@ -197,9 +208,12 @@ class MonitorConfig:
             )
         # Which field has to be filled in depends on the transport, and naming
         # the wrong one in the error is how people end up setting both.
-        needs = (
-            "safety_host" if self.safety_transport == "tcp" else "safety_serial_port"
-        )
+        needs = {
+            "tcp": "safety_host",
+            "rtu": "safety_serial_port",
+            "relay": "safety_serial_port",
+            "gpio": "safety_gpio_chip",
+        }[self.safety_transport]
         if self.brake_after > 0 and not getattr(self, needs):
             # A brake threshold with nowhere to send it looks armed and does
             # nothing, which is the worst state a safety feature can be in.
@@ -218,6 +232,13 @@ class MonitorConfig:
             )
         if self.safety_relay_channel < 0:
             raise ConfigError("safety_relay_channel must be >= 0")
+        if not str(self.safety_gpio_line).strip():
+            # An empty line would be resolved by gpiod into whatever it felt
+            # like, which for a permit output is not a thing to leave open.
+            raise ConfigError(
+                "safety_gpio_line must be a line name or offset, e.g. "
+                "'PQ.05' or 105 for pin 29 on a Jetson Orin Nano"
+            )
         if not 1 <= self.safety_port <= 65535:
             raise ConfigError(
                 f"safety_port must be in [1, 65535], got {self.safety_port}"

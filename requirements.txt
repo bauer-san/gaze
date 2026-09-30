@@ -37,3 +37,12 @@ pymodbus==3.15.0
 # Both the RTU and relay transports import it lazily, so an environment
 # without it still runs everything else.
 pyserial==3.5
+# GPIO for the gpio safety transport (gaze_monitor.safety). These are the
+# official libgpiod v2 bindings, and they ship manylinux wheels for cp310
+# through cp314 on both x86_64 and aarch64, so nothing has to be built and
+# nothing has to be installed on the host. The v2 character-device API needs
+# Linux 5.10 or newer; L4T r36 is on 5.15, so that is satisfied. Note that
+# the apt package python3-libgpiod is still on 1.6 and has an incompatible
+# API -- this module targets v2 only. Imported lazily, so an environment
+# without it still runs everything else.
+gpiod==2.5.0

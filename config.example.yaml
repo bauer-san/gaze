@@ -110,6 +110,9 @@ brake_on_fault: false      # a fouled lens should usually be loud, not stopping
 #   rtu    Modbus RTU, serial   -- safety_serial_port and the line settings
 #   relay  USB relay module     -- safety_serial_port, one dry contact,
 #                                  no protocol and no addresses
+#   gpio   one line on this board -- safety_gpio_chip, safety_gpio_line.
+#                                  No adapter and no bus, which is why it is
+#                                  the choice on a board with no spare USB.
 safety_transport: tcp
 
 safety_host: ""            # tcp only; empty disables; 127.0.0.1 to loop back
@@ -132,6 +135,23 @@ safety_address: 0
 # lcus is the four-byte CH340 dialect.
 safety_relay_protocol: numato
 safety_relay_channel: 0
+
+# gpio only. Drives one output line straight off the 40-pin header, into the
+# coil side of a relay module; take the permit off the normally-open contact
+# so that energised means permitted.
+#
+# The default is pin 29 on a Jetson Orin Nano: the silkscreen calls it GPIO01
+# and the SoC calls it PQ.05, which is offset 105 on this kernel. The name is
+# used rather than the offset because the name belongs to the board and the
+# offset belongs to the kernel; either is accepted, and the line actually
+# claimed is logged at start-up. `gpioinfo` lists the names on another board.
+#
+# Read GpioBackend in gaze_monitor/safety.py before relying on this one. A
+# released line is not necessarily a high-impedance pad, so the usual "a
+# crash drops the coil" argument does not hold here without measuring it.
+safety_gpio_chip: /dev/gpiochip0
+safety_gpio_line: PQ.05
+safety_gpio_active_low: false
 
 safety_interval: 0.1       # seconds between permit renewals
 safety_stale_after: 0.5    # vision result older than this stops renewals

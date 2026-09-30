@@ -391,10 +391,12 @@ def test_sigusr1_arms_only_when_an_output_is_configured():
 import os  # noqa: E402
 
 from gaze_monitor.safety import (  # noqa: E402
+    GpioBackend,
     ModbusSerialBackend,
     SerialRelayBackend,
     create_backend,
     destination,
+    parse_line_id,
 )
 
 
@@ -413,6 +415,9 @@ def _transport_cfg(**overrides):
         safety_address=0,
         safety_relay_protocol="numato",
         safety_relay_channel=0,
+        safety_gpio_chip="/dev/gpiochip0",
+        safety_gpio_line="PQ.05",
+        safety_gpio_active_low=False,
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -438,6 +443,7 @@ def test_destination_names_the_field_that_actually_matters():
         ("tcp", "ModbusBackend", {"safety_host": "10.0.0.5"}),
         ("rtu", "ModbusSerialBackend", {"safety_serial_port": "/dev/null"}),
         ("relay", "SerialRelayBackend", {"safety_serial_port": "/dev/null"}),
+        ("gpio", "GpioBackend", {}),
     ],
 )
 def test_the_transport_selects_the_backend(transport, expected, extra):
@@ -607,3 +613,144 @@ def test_a_serial_modbus_backend_reports_its_line_settings():
     assert "38400" in backend.describe()
     assert "8E2" in backend.describe()
     assert "unit 3" in backend.describe()
+
+
+# -- the GPIO transport ----------------------------------------------------
+#
+# Driven through a stand-in for the libgpiod line, so these run on a CI
+# runner with no gpiochip at all. What they cannot check is the one thing
+# that actually matters -- what the pad does after an uncontrolled exit --
+# which is why GpioBackend documents that as something to measure rather
+# than something to assume.
+
+
+class _FakeLine:
+    """Stands in for one claimed output line, and records the sequence."""
+
+    instances: list["_FakeLine"] = []
+
+    def __init__(self, chip, line, active_low):
+        self.chip = chip
+        self.line = line
+        self.active_low = active_low
+        self.values: list[bool] = []
+        self.closed = False
+        self.fail_next = False
+        _FakeLine.instances.append(self)
+
+    def set(self, permitted):
+        if self.fail_next:
+            self.fail_next = False
+            raise OSError("line went away")
+        self.values.append(bool(permitted))
+
+    def close(self):
+        self.values.append(False)
+        self.closed = True
+
+
+@pytest.fixture
+def fake_line():
+    _FakeLine.instances = []
+    yield _FakeLine
+    _FakeLine.instances = []
+
+
+def test_a_line_can_be_named_by_offset_or_by_name():
+    """Offsets belong to the kernel and names belong to the board. Accepting
+    only one of them makes the config wrong on somebody's hardware."""
+    assert parse_line_id("PQ.05") == "PQ.05"
+    assert parse_line_id(105) == 105
+    assert parse_line_id("105") == 105
+    assert parse_line_id(" 105 ") == 105
+
+
+def test_an_empty_or_negative_line_is_refused():
+    with pytest.raises(ValueError, match="offset or a name"):
+        parse_line_id("   ")
+    with pytest.raises(ValueError, match="must be >= 0"):
+        parse_line_id(-1)
+
+
+def test_the_gpio_backend_drives_the_line(fake_line):
+    backend = GpioBackend(line="PQ.05", open_line=fake_line)
+    backend.write(True)
+    backend.write(False)
+    assert fake_line.instances[0].values == [True, False]
+    assert fake_line.instances[0].line == "PQ.05"
+
+
+def test_the_line_is_claimed_once_and_reused(fake_line):
+    """Re-claiming per write would mean the pad was released between
+    renewals, which is a ten-times-a-second glitch on the coil."""
+    backend = GpioBackend(open_line=fake_line)
+    for _ in range(5):
+        backend.write(True)
+    assert len(fake_line.instances) == 1
+
+
+def test_closing_drives_the_refusal_before_releasing(fake_line):
+    """Releasing a line does not put the pad back to high impedance on every
+    SoC, so the last value written has to be the safe one."""
+    backend = GpioBackend(open_line=fake_line)
+    backend.write(True)
+    backend.close()
+    line = fake_line.instances[0]
+    assert line.values[-1] is False
+    assert line.closed is True
+
+
+def test_a_failed_write_drops_the_line_so_the_next_one_reclaims(fake_line):
+    backend = GpioBackend(open_line=fake_line)
+    backend.write(True)
+    fake_line.instances[0].fail_next = True
+    with pytest.raises(OSError):
+        backend.write(True)
+    backend.write(True)
+    assert len(fake_line.instances) == 2, "a stale handle would never recover"
+
+
+def test_active_low_reaches_the_line(fake_line):
+    GpioBackend(active_low=True, open_line=fake_line).write(True)
+    assert fake_line.instances[0].active_low is True
+
+
+def test_the_whole_output_drives_a_gpio_line(fake_line):
+    """End to end through the state machine: refused until armed, permitted
+    while attentive, refused past brake_after."""
+    backend = GpioBackend(open_line=fake_line)
+    out = SafetyOutput(_cfg(), backend=backend)
+
+    out.observe(_status(), 10.0)
+    out.tick(10.0)
+    out.arm()
+    out.observe(_status(), 10.1)
+    out.tick(10.1)
+    out.observe(_status(away=5.0), 10.2)
+    out.tick(10.2)
+
+    assert fake_line.instances[0].values == [False, True, False]
+
+
+def test_a_gpio_output_needs_no_host_and_no_serial_port():
+    """Both ends of this transport have defaults, so choosing it is the
+    opt-in. Requiring a field that is already set would be theatre."""
+    config = _transport_cfg(
+        safety_transport="gpio",
+        safety_gpio_chip="/dev/gpiochip0",
+        safety_gpio_line="PQ.05",
+        brake_after=3.0,
+        safety_interval=0.1,
+        safety_stale_after=0.5,
+        safety_auto_arm=False,
+    )
+    assert destination(config) == "/dev/gpiochip0:PQ.05"
+    assert SafetyOutput(config).enabled is True
+
+
+def test_the_gpio_backend_describes_what_it_will_claim(fake_line):
+    backend = GpioBackend(chip="/dev/gpiochip0", line=105, open_line=fake_line)
+    assert "105" in backend.describe()
+    assert "/dev/gpiochip0" in backend.describe()
+    assert "active low" not in backend.describe()
+    assert "active low" in GpioBackend(active_low=True, open_line=fake_line).describe()

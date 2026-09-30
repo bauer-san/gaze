@@ -14,3 +14,9 @@ pymodbus==3.15.0
 # Serial transports: Modbus RTU, and the USB relay, which uses pyserial
 # directly and no pymodbus at all. The tests drive both over a pty.
 pyserial==3.5
+# The gpio safety transport. Everything that touches libgpiod is behind one
+# replaceable class, so the tests need no gpiochip -- but they do need the
+# import to land, and gpiod ships manylinux wheels for both architectures, so
+# listing it here keeps the transport-selection test honest rather than
+# skipped.
+gpiod==2.5.0
