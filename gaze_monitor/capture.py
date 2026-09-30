@@ -20,17 +20,30 @@ from __future__ import annotations
 import abc
 import logging
 import re
+import time
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
 from .config import GST_PREFIX, SOURCE_NAMES
+from .recovery import OK, RECOVERED, RESET_FAILED, start_with_recovery
 
 log = logging.getLogger(__name__)
 
 # Kinect v1 DEPTH_REGISTERED is millimetres aligned to the RGB camera.
 _KINECT_MM_TO_M = 1.0 / 1000.0
+
+# Startup recovery for a wedged RealSense. Two probe attempts because a
+# healthy camera answers the first in about a frame time; only a dead one
+# pays the full timeout twice. The settle budget is generous because
+# re-enumeration is the kernel's business, not ours -- observed at about two
+# seconds on a Jetson, but a loaded bus can take longer, and giving up early
+# turns a recoverable camera into a failed start.
+FIRST_FRAME_ATTEMPTS = 2
+RESET_SETTLE_SECONDS = 15.0
+RESET_POLL_SECONDS = 0.5
+RESET_QUIET_SECONDS = 1.5
 
 
 class CameraError(RuntimeError):
@@ -144,6 +157,28 @@ class RealSenseSource(CameraSource):
         self.depth_scale = 0.001
 
     def start(self) -> None:
+        rs = self._rs()
+        outcome = start_with_recovery(
+            lambda: self._open(rs),
+            self._first_frame_arrives,
+            lambda: self._hardware_reset(rs),
+        )
+        if outcome == RESET_FAILED:
+            raise CameraError(
+                "The camera started but produced no frames, and it did not "
+                "come back after a hardware reset. Unplug it and plug it in "
+                "again; if that does not help, check the cable and the port."
+            )
+        if outcome not in (OK, RECOVERED):
+            raise CameraError(
+                "The camera started twice, once after a hardware reset, and "
+                "delivered no frames either time. It is visible on USB and "
+                "accepts a pipeline, so this is not a cabling fault. Try a "
+                "different port, and check no other process holds the device."
+            )
+
+    @staticmethod
+    def _rs():
         try:
             import pyrealsense2 as rs
         except ImportError as exc:  # pragma: no cover - depends on hardware SDK
@@ -153,7 +188,11 @@ class RealSenseSource(CameraSource):
                 "version publishes aarch64 wheels, so that works on Jetson "
                 "too (see jetson/README.md)."
             ) from exc
+        return rs
 
+    def _open(self, rs) -> None:
+        """Build and start the pipeline. Called again after a reset."""
+        self._close_pipeline()
         self.pipeline = rs.pipeline()
         config = rs.config()
         if self.serial:
@@ -188,6 +227,94 @@ class RealSenseSource(CameraSource):
             self.depth_scale,
         )
 
+    def _first_frame_arrives(self) -> bool:
+        """Has the pipeline actually produced anything?
+
+        A healthy camera answers the first attempt in about a frame time, so
+        this costs nothing on the happy path. Only a wedged one pays the full
+        timeout, and it pays it twice before we conclude anything.
+        """
+        for _ in range(FIRST_FRAME_ATTEMPTS):
+            try:
+                self.pipeline.wait_for_frames(self.timeout_ms)
+                return True
+            except RuntimeError:
+                continue
+        return False
+
+    def _hardware_reset(self, rs) -> bool:
+        """Reset the device and wait for it to come back on the bus.
+
+        A fresh context each poll: the one that found the device is holding
+        handles to something that is in the middle of disappearing, and it
+        will happily keep reporting the device it can no longer talk to.
+        """
+        device = self._find_device(rs)
+        if device is None:
+            log.error("No RealSense to reset -- librealsense lists no devices.")
+            return False
+
+        log.warning("Issuing a hardware reset to the RealSense.")
+        try:
+            device.hardware_reset()
+        except RuntimeError as exc:
+            log.error("The hardware reset was refused: %s", exc)
+            return False
+
+        # It takes a moment to drop off the bus; polling immediately would
+        # find the device that is on its way out and declare success.
+        time.sleep(RESET_QUIET_SECONDS)
+        deadline = time.monotonic() + RESET_SETTLE_SECONDS
+        while time.monotonic() < deadline:
+            if self._find_device(rs) is not None:
+                # Present is not the same as ready: the video nodes appear a
+                # little after the USB device does.
+                time.sleep(RESET_QUIET_SECONDS)
+                log.info("The RealSense came back after the reset.")
+                return True
+            time.sleep(RESET_POLL_SECONDS)
+
+        log.error(
+            "The RealSense did not come back within %.0fs of the reset.",
+            RESET_SETTLE_SECONDS,
+        )
+        return False
+
+    def _find_device(self, rs):
+        """The configured device, or any of them if no serial was given."""
+        try:
+            devices = list(rs.context().query_devices())
+        except RuntimeError:  # pragma: no cover - transient during a reset
+            return None
+        for device in devices:
+            if not self.serial:
+                return device
+            try:
+                if device.get_info(rs.camera_info.serial_number) == self.serial:
+                    return device
+            except RuntimeError:  # pragma: no cover - device mid-disconnect
+                continue
+        return None
+
+    def _close_pipeline(self) -> None:
+        """Stop the pipeline if one is running. Safe to call at any time.
+
+        Swallows the failure deliberately. This runs on the shutdown path,
+        inside the finally block that also closes the face mesh and restores
+        the terminal, and under a shutdown signal there is a limited grace
+        period to do all of it. A raise here would skip the rest and, worse,
+        is most likely when the device has already gone -- the one case where
+        there is nothing useful left to do anyway.
+        """
+        if self.pipeline is None:
+            return
+        try:
+            self.pipeline.stop()
+        except RuntimeError as exc:  # pragma: no cover - already stopped or gone
+            log.debug("pipeline.stop() failed: %s", exc)
+        finally:
+            self.pipeline = None
+
     def read(self) -> Frame | None:
         if self.pipeline is None:
             raise CameraError("read() before start()")
@@ -209,11 +336,7 @@ class RealSenseSource(CameraSource):
         return Frame(color=color, depth_m=depth_m)
 
     def stop(self) -> None:
-        if self.pipeline is not None:
-            try:
-                self.pipeline.stop()
-            finally:
-                self.pipeline = None
+        self._close_pipeline()
 
 
 class KinectSource(CameraSource):
