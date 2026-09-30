@@ -42,7 +42,10 @@ log = logging.getLogger(__name__)
 
 # Overlays, cheapest first. The full tesselation is roughly 2600 line
 # segments and is the one that costs real time; contours and irises are a
-# small fraction of it and are what anyone actually looks at.
+# small fraction of it. "mesh" is the default anyway, because all of that
+# cost lands on an HTTP thread and none of it on the capture loop, and on a
+# black background the lighter overlays read as scattered dots rather than
+# as a face. Drop to contours if a viewer is ever the bottleneck.
 DRAW_MODES = ("none", "irises", "contours", "mesh")
 
 # What the landmarks are drawn on. "black" is the default and means the
@@ -226,7 +229,7 @@ class Preview:
         self.bind = getattr(config, "preview_bind", "0.0.0.0") or "0.0.0.0"
         self.quality = int(getattr(config, "preview_quality", 80))
         self.max_fps = float(getattr(config, "preview_max_fps", 10.0))
-        self.draw = getattr(config, "preview_draw", "contours")
+        self.draw = getattr(config, "preview_draw", "mesh")
         self.background = getattr(config, "preview_background", "black")
         self.enabled = self.port > 0
 
@@ -261,8 +264,8 @@ class Preview:
             self.enabled = False
             return False
         if self.draw not in DRAW_MODES:
-            log.warning("Unknown preview_draw %r; falling back to contours", self.draw)
-            self.draw = "contours"
+            log.warning("Unknown preview_draw %r; falling back to mesh", self.draw)
+            self.draw = "mesh"
         if self.background not in BACKGROUNDS:
             log.warning(
                 "Unknown preview_background %r; falling back to black",

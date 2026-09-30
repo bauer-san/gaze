@@ -216,7 +216,9 @@ def test_the_preview_is_off_by_default():
     off by default would be wrong."""
     cfg = build_config()
     assert cfg.preview_port == 0
-    assert cfg.preview_draw == "contours"
+    # The tesselation, because all of its cost lands on an HTTP thread and
+    # the lighter overlays read as scattered dots on a black background.
+    assert cfg.preview_draw == "mesh"
 
 
 def test_a_lan_reachable_preview_validates():

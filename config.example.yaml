@@ -73,7 +73,11 @@ metrics_port: 9091
 # backpressure.
 preview_port: 0            # e.g. 8080; 0 disables
 preview_bind: 0.0.0.0      # 127.0.0.1 to require an ssh tunnel
-preview_draw: contours     # none | irises | contours | mesh
+# The full tesselation by default: it is the one that reads as a face on a
+# black background. It costs about 4.1 ms a frame against 0.4 for contours,
+# all of it on an HTTP thread rather than the capture loop, so it is only
+# worth dropping if a viewer somehow becomes the bottleneck.
+preview_draw: mesh         # none | irises | contours | mesh
 
 # What the landmarks are drawn on. "black" is the default, and with it the
 # camera image is never copied out of the capture loop: the endpoint serves

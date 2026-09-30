@@ -143,7 +143,11 @@ class MonitorConfig:
     preview_bind: str = "0.0.0.0"
     preview_quality: int = 80
     preview_max_fps: float = 10.0
-    preview_draw: str = "contours"
+    # The full tesselation by default. It is the expensive one (4.1 ms
+    # against 0.4 for contours) but every millisecond of it is spent on an
+    # HTTP thread, never on the capture loop, and on a black background it is
+    # the version that actually reads as a face.
+    preview_draw: str = "mesh"
     # "black" draws the landmarks on nothing, and is the default: the camera
     # image is then never copied out of the capture loop, so the endpoint
     # serves geometry and no picture of anyone. "camera" shows the live image

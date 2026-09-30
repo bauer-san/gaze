@@ -27,7 +27,7 @@ def _cfg(**overrides):
         preview_bind="127.0.0.1",
         preview_quality=80,
         preview_max_fps=0.0,
-        preview_draw="contours",
+        preview_draw="mesh",
         preview_background="camera",
     )
     values.update(overrides)
@@ -411,6 +411,21 @@ def test_landmarks_are_served_whichever_background_is_chosen():
     p.offer(_Frame(), [[0.1, 0.2, 0.3]], time.monotonic())
     payload = json.loads(p.landmarks_json(timeout=1.0))
     assert payload["points"] == [[0.1, 0.2, 0.3]]
+
+
+def test_an_unknown_draw_mode_falls_back_rather_than_refusing_to_start(caplog):
+    """A typo in the overlay name should cost you the overlay you wanted, not
+    the demonstration."""
+    p = Preview(
+        _cfg(preview_port=_free_port(), preview_draw="wireframe"),
+        renderer=_renderer(),
+    )
+    try:
+        assert p.start() is True
+        assert p.draw == "mesh"
+        assert "preview_draw" in caplog.text
+    finally:
+        p.stop()
 
 
 def test_an_unknown_background_falls_back_rather_than_refusing_to_start(caplog):

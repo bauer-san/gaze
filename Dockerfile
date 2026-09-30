@@ -71,6 +71,25 @@ PYCHECK
 
 COPY . .
 
+# The preview's default overlay is MediaPipe's face tesselation, and this is
+# the only place in CI where OpenCV and MediaPipe both exist -- the test
+# runners have neither, so tests/test_overlay.py skips its mesh cases there.
+# Draw one of each overlay and prove a JPEG comes out. Byte values rather
+# than escapes, so nothing depends on how the Dockerfile parser treats a
+# backslash inside a heredoc.
+RUN python3 - <<'OVERLAY'
+import numpy as np
+
+from gaze_monitor.overlay import render
+
+points = np.full((478, 3), 0.5, dtype=np.float32)
+for mode in ("none", "irises", "contours", "mesh"):
+    jpeg = render(None, (480, 640), points, mode)
+    assert jpeg[:2] == bytes((0xFF, 0xD8)), f"{mode}: not a JPEG"
+    assert jpeg[-2:] == bytes((0xFF, 0xD9)), f"{mode}: truncated JPEG"
+    print(f"overlay {mode:9s} {len(jpeg):6d} bytes")
+OVERLAY
+
 RUN mkdir -p /var/lib/gaze_monitor
 VOLUME ["/var/lib/gaze_monitor"]
 
@@ -158,6 +177,25 @@ PY
 
 COPY . .
 
+# The preview's default overlay is MediaPipe's face tesselation, and this is
+# the only place in CI where OpenCV and MediaPipe both exist -- the test
+# runners have neither, so tests/test_overlay.py skips its mesh cases there.
+# Draw one of each overlay and prove a JPEG comes out. Byte values rather
+# than escapes, so nothing depends on how the Dockerfile parser treats a
+# backslash inside a heredoc.
+RUN python3 - <<'OVERLAY'
+import numpy as np
+
+from gaze_monitor.overlay import render
+
+points = np.full((478, 3), 0.5, dtype=np.float32)
+for mode in ("none", "irises", "contours", "mesh"):
+    jpeg = render(None, (480, 640), points, mode)
+    assert jpeg[:2] == bytes((0xFF, 0xD8)), f"{mode}: not a JPEG"
+    assert jpeg[-2:] == bytes((0xFF, 0xD9)), f"{mode}: truncated JPEG"
+    print(f"overlay {mode:9s} {len(jpeg):6d} bytes")
+OVERLAY
+
 RUN mkdir -p /var/lib/gaze_monitor
 VOLUME ["/var/lib/gaze_monitor"]
 
@@ -230,6 +268,25 @@ print(f"cv2 {cv2.__version__} | mediapipe {mp.__version__}")
 PY
 
 COPY . .
+
+# The preview's default overlay is MediaPipe's face tesselation, and this is
+# the only place in CI where OpenCV and MediaPipe both exist -- the test
+# runners have neither, so tests/test_overlay.py skips its mesh cases there.
+# Draw one of each overlay and prove a JPEG comes out. Byte values rather
+# than escapes, so nothing depends on how the Dockerfile parser treats a
+# backslash inside a heredoc.
+RUN python3 - <<'OVERLAY'
+import numpy as np
+
+from gaze_monitor.overlay import render
+
+points = np.full((478, 3), 0.5, dtype=np.float32)
+for mode in ("none", "irises", "contours", "mesh"):
+    jpeg = render(None, (480, 640), points, mode)
+    assert jpeg[:2] == bytes((0xFF, 0xD8)), f"{mode}: not a JPEG"
+    assert jpeg[-2:] == bytes((0xFF, 0xD9)), f"{mode}: truncated JPEG"
+    print(f"overlay {mode:9s} {len(jpeg):6d} bytes")
+OVERLAY
 
 RUN mkdir -p /var/lib/gaze_monitor
 VOLUME ["/var/lib/gaze_monitor"]

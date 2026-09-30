@@ -95,7 +95,7 @@ def extract(face_landmarks) -> np.ndarray:
     )
 
 
-def render(frame, size, landmarks, mode: str = "contours", quality: int = 80) -> bytes:
+def render(frame, size, landmarks, mode: str = "mesh", quality: int = 80) -> bytes:
     """Draw the overlay and encode to JPEG.
 
     ``frame`` is the camera image, or ``None`` to draw on black. None is the
