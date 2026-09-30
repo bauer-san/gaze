@@ -73,6 +73,48 @@ def test_the_mediapipe_overlays_encode(mode):
     assert _jpeg(render(_frame(), (480, 640), lm, mode))
 
 
+def test_the_heavier_overlays_actually_draw_more():
+    """Encoding successfully is not the same as drawing something.
+
+    The first version of the image-build assertion put every landmark at 0.5,
+    which collapses all 2600 tesselation segments onto a single pixel. All
+    four modes then returned byte-identical output and the check passed while
+    proving nothing. Spread points and an ordering assertion is what catches
+    an overlay that has quietly stopped drawing.
+    """
+    import cv2
+
+    pytest.importorskip("mediapipe")
+    points = (np.random.default_rng(0).random((478, 3)) * 0.6 + 0.2).astype(np.float32)
+
+    def lit(mode):
+        jpeg = render(None, (480, 640), points, mode)
+        image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        return int((image.max(axis=2) > 25).sum())
+
+    counts = {mode: lit(mode) for mode in ("none", "irises", "contours", "mesh")}
+    assert counts["contours"] > counts["none"], counts
+    assert counts["mesh"] > counts["contours"], counts
+    assert counts["mesh"] > 5 * counts["none"], counts
+
+
+def test_landmarks_stacked_on_one_pixel_do_not_look_like_a_mesh():
+    """The degenerate case that fooled the first assertion, pinned so nobody
+    writes a test on top of it again. Every point identical means every
+    segment has zero length, so there is nothing to see whatever the mode."""
+    import cv2
+
+    stacked = np.full((478, 3), 0.5, np.float32)
+    image = cv2.imdecode(
+        np.frombuffer(render(None, (480, 640), stacked, "none"), np.uint8),
+        cv2.IMREAD_COLOR,
+    )
+    lit = int((image.max(axis=2) > 25).sum())
+    # Six overlapping dots at the centre, and nothing else anywhere.
+    assert 0 < lit < 500, lit
+    assert not image[:200].any(), "something was drawn away from the centre"
+
+
 def test_extract_pulls_normalised_points_out_of_the_protobuf():
     from gaze_monitor.overlay import extract
 

@@ -74,20 +74,35 @@ COPY . .
 # The preview's default overlay is MediaPipe's face tesselation, and this is
 # the only place in CI where OpenCV and MediaPipe both exist -- the test
 # runners have neither, so tests/test_overlay.py skips its mesh cases there.
-# Draw one of each overlay and prove a JPEG comes out. Byte values rather
-# than escapes, so nothing depends on how the Dockerfile parser treats a
-# backslash inside a heredoc.
+#
+# Count lit pixels rather than just checking for JPEG markers. The first
+# version of this check put every landmark at 0.5, which collapses all 2600
+# segments onto one pixel: all four modes returned byte-identical output and
+# the check passed while proving nothing. Spread points and an ordering
+# assertion is what actually catches an overlay that has stopped drawing.
 RUN python3 - <<'OVERLAY'
+import cv2
 import numpy as np
 
 from gaze_monitor.overlay import render
 
-points = np.full((478, 3), 0.5, dtype=np.float32)
-for mode in ("none", "irises", "contours", "mesh"):
+points = (np.random.default_rng(0).random((478, 3)) * 0.6 + 0.2).astype(np.float32)
+
+
+def lit(mode):
     jpeg = render(None, (480, 640), points, mode)
     assert jpeg[:2] == bytes((0xFF, 0xD8)), f"{mode}: not a JPEG"
     assert jpeg[-2:] == bytes((0xFF, 0xD9)), f"{mode}: truncated JPEG"
-    print(f"overlay {mode:9s} {len(jpeg):6d} bytes")
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return int((image.max(axis=2) > 25).sum())
+
+
+counts = {mode: lit(mode) for mode in ("none", "irises", "contours", "mesh")}
+for mode, pixels in counts.items():
+    print(f"overlay {mode:9s} {pixels:7d} lit pixels")
+assert counts["contours"] > counts["none"], counts
+assert counts["mesh"] > counts["contours"], counts
+assert counts["mesh"] > 5 * counts["none"], counts
 OVERLAY
 
 RUN mkdir -p /var/lib/gaze_monitor
@@ -180,20 +195,35 @@ COPY . .
 # The preview's default overlay is MediaPipe's face tesselation, and this is
 # the only place in CI where OpenCV and MediaPipe both exist -- the test
 # runners have neither, so tests/test_overlay.py skips its mesh cases there.
-# Draw one of each overlay and prove a JPEG comes out. Byte values rather
-# than escapes, so nothing depends on how the Dockerfile parser treats a
-# backslash inside a heredoc.
+#
+# Count lit pixels rather than just checking for JPEG markers. The first
+# version of this check put every landmark at 0.5, which collapses all 2600
+# segments onto one pixel: all four modes returned byte-identical output and
+# the check passed while proving nothing. Spread points and an ordering
+# assertion is what actually catches an overlay that has stopped drawing.
 RUN python3 - <<'OVERLAY'
+import cv2
 import numpy as np
 
 from gaze_monitor.overlay import render
 
-points = np.full((478, 3), 0.5, dtype=np.float32)
-for mode in ("none", "irises", "contours", "mesh"):
+points = (np.random.default_rng(0).random((478, 3)) * 0.6 + 0.2).astype(np.float32)
+
+
+def lit(mode):
     jpeg = render(None, (480, 640), points, mode)
     assert jpeg[:2] == bytes((0xFF, 0xD8)), f"{mode}: not a JPEG"
     assert jpeg[-2:] == bytes((0xFF, 0xD9)), f"{mode}: truncated JPEG"
-    print(f"overlay {mode:9s} {len(jpeg):6d} bytes")
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return int((image.max(axis=2) > 25).sum())
+
+
+counts = {mode: lit(mode) for mode in ("none", "irises", "contours", "mesh")}
+for mode, pixels in counts.items():
+    print(f"overlay {mode:9s} {pixels:7d} lit pixels")
+assert counts["contours"] > counts["none"], counts
+assert counts["mesh"] > counts["contours"], counts
+assert counts["mesh"] > 5 * counts["none"], counts
 OVERLAY
 
 RUN mkdir -p /var/lib/gaze_monitor
@@ -272,20 +302,35 @@ COPY . .
 # The preview's default overlay is MediaPipe's face tesselation, and this is
 # the only place in CI where OpenCV and MediaPipe both exist -- the test
 # runners have neither, so tests/test_overlay.py skips its mesh cases there.
-# Draw one of each overlay and prove a JPEG comes out. Byte values rather
-# than escapes, so nothing depends on how the Dockerfile parser treats a
-# backslash inside a heredoc.
+#
+# Count lit pixels rather than just checking for JPEG markers. The first
+# version of this check put every landmark at 0.5, which collapses all 2600
+# segments onto one pixel: all four modes returned byte-identical output and
+# the check passed while proving nothing. Spread points and an ordering
+# assertion is what actually catches an overlay that has stopped drawing.
 RUN python3 - <<'OVERLAY'
+import cv2
 import numpy as np
 
 from gaze_monitor.overlay import render
 
-points = np.full((478, 3), 0.5, dtype=np.float32)
-for mode in ("none", "irises", "contours", "mesh"):
+points = (np.random.default_rng(0).random((478, 3)) * 0.6 + 0.2).astype(np.float32)
+
+
+def lit(mode):
     jpeg = render(None, (480, 640), points, mode)
     assert jpeg[:2] == bytes((0xFF, 0xD8)), f"{mode}: not a JPEG"
     assert jpeg[-2:] == bytes((0xFF, 0xD9)), f"{mode}: truncated JPEG"
-    print(f"overlay {mode:9s} {len(jpeg):6d} bytes")
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    return int((image.max(axis=2) > 25).sum())
+
+
+counts = {mode: lit(mode) for mode in ("none", "irises", "contours", "mesh")}
+for mode, pixels in counts.items():
+    print(f"overlay {mode:9s} {pixels:7d} lit pixels")
+assert counts["contours"] > counts["none"], counts
+assert counts["mesh"] > counts["contours"], counts
+assert counts["mesh"] > 5 * counts["none"], counts
 OVERLAY
 
 RUN mkdir -p /var/lib/gaze_monitor
