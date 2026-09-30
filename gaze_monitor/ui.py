@@ -73,6 +73,15 @@ FAILURES_BEFORE_UNHEALTHY = 3
 # when there is other work, like annunciating the fault, to get done.
 FAILURE_BACKOFF_SECONDS = 0.02
 
+# A dead camera used to be completely silent in the log. A RealSense whose
+# pipeline starts and then delivers nothing -- the state it lands in after an
+# unclean shutdown -- produced hundreds of dropped frames, a FAULT state, and
+# not one line saying why. FAULT tells you something is wrong; these tell you
+# what. Logged on a schedule rather than every read, because at a 2 second
+# read timeout an unattended weekend would otherwise be tens of thousands of
+# identical lines.
+DROP_LOG_EVERY = 50
+
 
 def _log_transition(old: AttentionState, new: AttentionState, status) -> None:
     level = logging.WARNING if new.is_alarming else logging.INFO
@@ -487,8 +496,21 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
 
             if captured is None:
                 failures += 1
+                if failures == FAILURES_BEFORE_UNHEALTHY or (
+                    failures > FAILURES_BEFORE_UNHEALTHY
+                    and failures % DROP_LOG_EVERY == 0
+                ):
+                    log.warning(
+                        "No frame from the camera for %d consecutive reads. "
+                        "The device may have wedged: it can enumerate, start a "
+                        "pipeline and still deliver nothing. A hardware_reset() "
+                        "or a replug clears that.",
+                        failures,
+                    )
                 time.sleep(FAILURE_BACKOFF_SECONDS)
             else:
+                if failures >= FAILURES_BEFORE_UNHEALTHY:
+                    log.info("Camera recovered after %d dropped frames", failures)
                 failures = 0
 
             sample = None
