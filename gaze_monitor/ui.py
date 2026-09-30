@@ -618,12 +618,21 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
         # _Terminated subclasses this, so SIGTERM and Ctrl-C share the path.
         log.info("Interrupted")
     finally:
-        # Refuse the permit before anything else: the machine should not be
-        # permitted to run for the time it takes to close a camera.
+        # Order matters, and both of the first two places are earned.
+        #
+        # The permit goes first: the machine must not stay permitted for the
+        # time it takes anything else to shut down.
+        #
+        # The camera goes second, ahead of the two stops that join background
+        # threads with two second timeouts each. Those could between them eat
+        # most of Docker's ten second grace period, and a SIGKILL landing
+        # before pipeline.stop() is exactly what leaves a RealSense wedged --
+        # enumerating, starting a pipeline, and then never delivering a frame.
+        # Nothing below needs the camera, so there is no reason for it to wait.
         safety.stop()
+        cam.stop()
         machine.stop()
         preview.stop()
-        cam.stop()
         face_mesh.close()
         ui.stop()
 
