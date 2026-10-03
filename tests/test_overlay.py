@@ -12,6 +12,9 @@ import pytest
 np = pytest.importorskip("numpy")
 pytest.importorskip("cv2")
 
+import cv2  # noqa: E402
+
+import gaze_monitor.overlay as overlay_mod  # noqa: E402
 from gaze_monitor.overlay import render  # noqa: E402
 
 
@@ -167,3 +170,110 @@ def test_landmarks_land_where_they_were_put_and_nowhere_else():
     )
     assert drawn[240, 320].any(), "the landmarks at the centre were not drawn"
     assert not drawn[470:, 600:].any(), "the background did not stay black"
+
+
+# -- binocular markers -----------------------------------------------------
+#
+# The complaint these answer: in the preview the two irises moved
+# independently and unnaturally, which real eyes do not do. They were
+# MediaPipe's raw per-eye landmarks, inferred from separate eye crops with no
+# binocular constraint in the model. The estimate had already averaged and
+# smoothed them; the preview just was not showing it.
+
+
+def _eyes(dx_left=0.0, dx_right=0.0, dy=0.0):
+    """Landmarks with both eyes level and the irises placed by hand."""
+    lms = np.zeros((478, 3), np.float32)
+    lms[overlay_mod.LEFT_EYE_OUTER] = (0.40, 0.50, 0.0)
+    lms[overlay_mod.LEFT_EYE_INNER] = (0.46, 0.50, 0.0)
+    lms[overlay_mod.RIGHT_EYE_INNER] = (0.54, 0.50, 0.0)
+    lms[overlay_mod.RIGHT_EYE_OUTER] = (0.60, 0.50, 0.0)
+    width = 0.06
+    lms[overlay_mod.LEFT_IRIS] = (0.43 + dx_left * width / 2, 0.50 + dy, 0.0)
+    lms[overlay_mod.RIGHT_IRIS] = (0.57 + dx_right * width / 2, 0.50 + dy, 0.0)
+    return lms
+
+
+def _iris_marks(jpeg):
+    """Where the bright iris markers landed, as (x, y) pixel columns/rows.
+
+    Matched with a tolerance, because JPEG is lossy and an exact colour
+    comparison finds nothing at any quality below 100.
+    """
+    image = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    want = np.array(overlay_mod.IRIS_COLOUR, np.int16)
+    mask = np.all(np.abs(image.astype(np.int16) - want) <= 50, axis=-1)
+    ys, xs = np.nonzero(mask)
+    if xs.size == 0:
+        return []
+    left = xs < image.shape[1] // 2
+    out = []
+    for side in (left, ~left):
+        if side.any():
+            out.append((float(xs[side].mean()), float(ys[side].mean())))
+    return out
+
+
+def test_fused_markers_move_together_however_the_raw_irises_disagree():
+    """The whole point. Two raw irises pulled hard in opposite directions
+    still render as one shared estimate, because that is what the monitor
+    acts on."""
+    size = (480, 640)
+    disagreeing = _eyes(dx_left=0.8, dx_right=-0.8)
+    marks = _iris_marks(
+        render(None, size, disagreeing, mode="none", quality=100, gaze=(0.0, 0.0))
+    )
+    assert len(marks) == 2
+    left, right = marks
+    # Both placed at their own eye centre, so each sits the same distance
+    # inside its eye. Symmetric about the face midline, which is (w - 1) / 2
+    # because that is the scaling the markers go through.
+    midline = (size[1] - 1) / 2
+    assert abs((midline - left[0]) - (right[0] - midline)) < 1.5
+    assert abs(left[1] - right[1]) < 1.5, "a shared dy must put both at one height"
+
+
+def test_the_fused_markers_follow_the_estimate_not_the_landmarks():
+    size = (480, 640)
+    still = _eyes()
+    centred = _iris_marks(
+        render(None, size, still, mode="none", quality=100, gaze=(0.0, 0.0))
+    )
+    looking = _iris_marks(
+        render(None, size, still, mode="none", quality=100, gaze=(0.6, 0.0))
+    )
+    # Raw landmarks identical in both; only the estimate changed.
+    assert centred[0][0] < looking[0][0]
+    assert centred[1][0] < looking[1][0]
+    moved_left = looking[0][0] - centred[0][0]
+    moved_right = looking[1][0] - centred[1][0]
+    assert abs(moved_left - moved_right) < 1.5, "eyes must move by equal amounts"
+
+
+def test_raw_mode_still_shows_what_mediapipe_actually_said():
+    """Diagnosing tracking needs the unfused landmarks, so the mode stays.
+
+    Checked against the fused rendering of the same frame rather than against
+    symmetry: two eyes disagreeing by equal and opposite amounts is
+    convergence, and convergence is symmetric about the midline, so symmetry
+    does not distinguish the two modes.
+    """
+    size = (480, 640)
+    disagreeing = _eyes(dx_left=0.8, dx_right=-0.8)
+    common = dict(mode="none", quality=100, gaze=(0.0, 0.0))
+    fused = _iris_marks(render(None, size, disagreeing, **common))
+    raw = _iris_marks(render(None, size, disagreeing, gaze_mode="raw", **common))
+    assert len(raw) == 2
+    # Fused ignores the landmarks and places both at the eye centres; raw
+    # puts them where MediaPipe said. Those are different places.
+    assert abs(raw[0][0] - fused[0][0]) > 10
+    assert abs(raw[1][0] - fused[1][0]) > 10
+
+
+def test_with_no_estimate_the_raw_landmarks_are_drawn_anyway():
+    """No markers at all would read as a tracking failure when the truth is
+    only that this frame had no usable sample."""
+    marks = _iris_marks(
+        render(None, (480, 640), _eyes(), mode="none", quality=100, gaze=None)
+    )
+    assert len(marks) == 2

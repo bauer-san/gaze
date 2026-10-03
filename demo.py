@@ -259,6 +259,16 @@ def build_parser() -> argparse.ArgumentParser:
             "capture loop."
         ),
     )
+    preview.add_argument(
+        "--preview-gaze",
+        choices=["fused", "raw", "both"],
+        default=None,
+        help=(
+            "What the iris markers show: the smoothed both-eye estimate "
+            "(fused, the default), MediaPipe's raw per-eye landmarks (raw), "
+            "or fused over raw for comparing them (both)."
+        ),
+    )
     preview.add_argument("--preview-quality", type=int, default=None)
     preview.add_argument("--preview-max-fps", type=float, default=None)
 
@@ -330,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
                 "preview_bind",
                 "preview_draw",
                 "preview_background",
+                "preview_gaze",
                 "preview_quality",
                 "preview_max_fps",
                 "brake_after",

@@ -243,3 +243,8 @@ def test_the_preview_draws_on_black_by_default():
 def test_an_unknown_preview_background_is_rejected():
     with pytest.raises(ConfigError, match="preview_background"):
         build_config({"preview_background": "greenscreen"})
+
+
+def test_an_unknown_preview_gaze_mode_is_refused():
+    with pytest.raises(ConfigError, match="preview_gaze"):
+        build_config({"preview_gaze": "telepathy"})

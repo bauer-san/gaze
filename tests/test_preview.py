@@ -29,6 +29,7 @@ def _cfg(**overrides):
         preview_max_fps=0.0,
         preview_draw="mesh",
         preview_background="camera",
+        preview_gaze="fused",
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -49,10 +50,10 @@ class _Frame:
 
 
 def _renderer(calls=None):
-    def render(frame, size, landmarks, mode, quality):
+    def render(frame, size, landmarks, mode, quality, gaze=None, gaze_mode="fused"):
         tag = "black" if frame is None else frame.tag
         if calls is not None:
-            calls.append((tag, size, mode, quality))
+            calls.append((tag, size, mode, quality, gaze, gaze_mode))
         return b"JPEG:" + tag.encode()
 
     return render
@@ -163,7 +164,7 @@ def test_the_renderer_is_given_the_configured_mode_and_quality():
     p._viewers = 1
     p.offer(_Frame("a"), None, 100.0)
     p.next_jpeg(0, timeout=1.0)
-    assert calls == [("a", (480, 640), "mesh", 55)]
+    assert calls == [("a", (480, 640), "mesh", 55, None, "fused")]
 
 
 def test_the_frame_is_copied_before_it_is_handed_over():
@@ -463,3 +464,26 @@ def test_the_startup_warning_says_which_of_the_two_it_is(caplog):
             assert forbidden not in caplog.text
         finally:
             p.stop()
+
+
+def test_the_gaze_estimate_reaches_the_renderer_and_the_json():
+    """The preview exists to show what the monitor believes, so the estimate
+    has to travel with the frame rather than be re-derived from landmarks."""
+    calls = []
+    p = Preview(_cfg(preview_port=1), renderer=_renderer(calls))
+    p._viewers = 1
+    p.offer(_Frame("a"), [[0.1, 0.2, 0.0]], 100.0, (0.25, -0.5))
+    p.next_jpeg(0, timeout=1.0)
+    assert calls[0][4] == (0.25, -0.5)
+    assert calls[0][5] == "fused"
+
+    payload = json.loads(p.landmarks_json(timeout=1.0))
+    assert payload["gaze"] == {"dx": 0.25, "dy": -0.5}
+
+
+def test_a_frame_with_no_usable_sample_reports_a_null_gaze():
+    """Distinguishable from dx=0, which is a real reading meaning centred."""
+    p = Preview(_cfg(preview_port=1), renderer=_renderer())
+    p._viewers = 1
+    p.offer(_Frame("a"), None, 100.0, None)
+    assert json.loads(p.landmarks_json(timeout=1.0))["gaze"] is None

@@ -551,6 +551,10 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                             else None
                         ),
                         now,
+                        # The smoothed estimate, not the raw sample. What the
+                        # preview is for is showing what the monitor
+                        # believes, and this is that.
+                        None if sample is None else (sample.dx, sample.dy),
                     )
 
             camera_ok = failures < FAILURES_BEFORE_UNHEALTHY and not blinded

@@ -36,6 +36,9 @@ PARITIES = ("N", "E", "O")
 # gaze_monitor.preview, as a literal for the same reason as the tuples above.
 PREVIEW_DRAW_MODES = ("none", "irises", "contours", "mesh")
 PREVIEW_BACKGROUNDS = ("black", "camera")
+# What the preview's iris markers mean. Mirrors GAZE_MODES in
+# gaze_monitor.overlay, as a literal for the same reason as the tuples above.
+PREVIEW_GAZE_MODES = ("fused", "raw", "both")
 
 
 class ConfigError(ValueError):
@@ -176,6 +179,15 @@ class MonitorConfig:
     # serves geometry and no picture of anyone. "camera" shows the live image
     # underneath, which is what answers "why is tracking poor here".
     preview_background: str = "black"
+    # What the iris markers show. "fused" is the estimate: both eyes placed
+    # from one shared, smoothed (dx, dy), so they move together the way real
+    # eyes do. "raw" is MediaPipe's per-eye landmarks, which jitter
+    # independently because its iris model runs on each eye crop separately
+    # with no binocular constraint in it. "both" draws fused bright over raw
+    # dim, which is the one to use when judging whether the smoothing is
+    # right. The default is the estimate, because a preview that disagrees
+    # with the measurement is worse than no preview.
+    preview_gaze: str = "fused"
 
     # -- metrics --
     # TCP port for the Prometheus exporter; 0 disables it. Off by default
@@ -313,6 +325,11 @@ class MonitorConfig:
                 f"preview_background must be one of "
                 f"{', '.join(PREVIEW_BACKGROUNDS)}, "
                 f"got {self.preview_background!r}"
+            )
+        if self.preview_gaze not in PREVIEW_GAZE_MODES:
+            raise ConfigError(
+                f"preview_gaze must be one of {', '.join(PREVIEW_GAZE_MODES)}, "
+                f"got {self.preview_gaze!r}"
             )
         if not 1 <= self.preview_quality <= 100:
             raise ConfigError(

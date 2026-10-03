@@ -122,6 +122,52 @@ def eye_displacement(
     )
 
 
+# The eyes, as (iris index, corner a, corner b), in the same argument order
+# eye_displacement takes them. One tuple so the forward and inverse transforms
+# cannot disagree about which corner is which.
+EYES = (
+    (LEFT_IRIS, LEFT_EYE_OUTER, LEFT_EYE_INNER),
+    (RIGHT_IRIS, RIGHT_EYE_INNER, RIGHT_EYE_OUTER),
+)
+
+
+def project_gaze(landmarks: np.ndarray, dx: float, dy: float):
+    """Where each iris would sit if both eyes shared one gaze estimate.
+
+    The exact inverse of :func:`eye_displacement`, and deliberately written
+    next to it: the two have to use the same normalisation, and a change to
+    one that misses the other produces a preview that disagrees with the
+    measurement in a way nobody would spot by looking.
+
+    Takes the plain ``(N, 3)`` array the preview carries rather than
+    MediaPipe's protobuf, because this is called on an HTTP thread where the
+    protobuf is long gone.
+
+    This is what makes the preview honest about binocular vision. Eyes move
+    together, so one shared ``(dx, dy)`` drives both markers and they move
+    together by construction. The raw per-eye landmarks do not, because
+    MediaPipe infers each iris from its own eye crop with no binocular
+    constraint anywhere in the model.
+
+    Returns one normalised ``(x, y)`` per eye, or ``None`` for an eye whose
+    corners are too close together to divide by.
+    """
+    out = []
+    for _, a_idx, b_idx in EYES:
+        if max(a_idx, b_idx) >= len(landmarks):
+            out.append(None)
+            continue
+        ax, ay = float(landmarks[a_idx][0]), float(landmarks[a_idx][1])
+        bx, by = float(landmarks[b_idx][0]), float(landmarks[b_idx][1])
+        eye_width = abs(bx - ax)
+        if eye_width < MIN_EYE_WIDTH:
+            out.append(None)
+            continue
+        cx, cy = (ax + bx) / 2.0, (ay + by) / 2.0
+        out.append((cx + dx * eye_width / 2.0, cy + dy * eye_width / 4.0))
+    return out
+
+
 def depth_at(depth_m: np.ndarray | None, px: int, py: int, patch: int = 5) -> float:
     """Median valid depth in metres over a small patch around (px, py).
 
