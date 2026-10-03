@@ -33,7 +33,7 @@ from .calibration import (
 )
 from .capture import CameraError, create_source
 from .config import MonitorConfig
-from .gaze import GazeFilter, gaze_from_landmarks
+from .gaze import GazeFilter, GazeMeasurer
 from .machine import MachineReader
 from .metrics import Metrics
 from .overlay import extract as extract_landmarks
@@ -443,6 +443,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     calibrating = record is None
     filter_x = GazeFilter(alpha=config.filter_alpha)
     filter_y = GazeFilter(alpha=config.filter_alpha)
+    measurer = GazeMeasurer()
 
     cam = create_source(
         config.source,
@@ -523,7 +524,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 results = face_mesh.process(rgb)
                 face_seen = bool(results.multi_face_landmarks)
                 if face_seen:
-                    raw = gaze_from_landmarks(
+                    raw = measurer.measure(
                         results.multi_face_landmarks[0], w, h, captured.depth_m
                     )
                     if raw is not None:
@@ -616,6 +617,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 monitor.reset()
                 filter_x.reset()
                 filter_y.reset()
+                measurer.reset()
                 calibrating = True
                 message = ""
     except KeyboardInterrupt:

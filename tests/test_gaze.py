@@ -15,21 +15,33 @@ from gaze_monitor.gaze import (
     LEFT_EYE_INNER,
     LEFT_EYE_OUTER,
     LEFT_IRIS,
+    LEFT_IRIS_RING,
+    REFINED_LANDMARK_COUNT,
     RIGHT_EYE_INNER,
     RIGHT_EYE_OUTER,
     RIGHT_IRIS,
+    RIGHT_IRIS_RING,
     GazeFilter,
+    GazeMeasurer,
     depth_at,
     eye_displacement,
     gaze_from_landmarks,
+    iris_centre,
 )
 
 
 class FakeLandmarks:
-    """Stands in for a MediaPipe NormalizedLandmarkList."""
+    """Stands in for a MediaPipe NormalizedLandmarkList.
 
-    def __init__(self, points):
-        size = max(points) + 1
+    ``size`` matters. FaceMesh emits 468 landmarks, or 478 with
+    refine_landmarks, and the iris ring only exists in the second. Sizing to
+    the highest index that happens to be set would produce a list that holds
+    some of the ring as placeholder zeros, which is not a state the real
+    thing can be in.
+    """
+
+    def __init__(self, points, size=None):
+        size = max(size or 0, max(points) + 1)
         self.landmark = [SimpleNamespace(x=0.0, y=0.0, z=0.0) for _ in range(size)]
         for idx, (x, y) in points.items():
             self.landmark[idx] = SimpleNamespace(x=x, y=y, z=0.0)
@@ -44,6 +56,22 @@ def centered_eye(iris_x=0.5, iris_y=0.5, half_width=0.05):
         RIGHT_EYE_INNER: (iris_x + 0.2 - half_width, iris_y),
         RIGHT_EYE_OUTER: (iris_x + 0.2 + half_width, iris_y),
     }
+
+
+def with_iris_rings(points, radius=0.006):
+    """Add a symmetric limbus ring around each iris centre.
+
+    Symmetric on purpose: the five-point mean must land exactly on the centre
+    when the ring is, so that averaging reduces noise without shifting the
+    measurement and invalidating a calibration.
+    """
+    points = dict(points)
+    for centre, ring in ((LEFT_IRIS, LEFT_IRIS_RING), (RIGHT_IRIS, RIGHT_IRIS_RING)):
+        cx, cy = points[centre]
+        offsets = ((radius, 0.0), (0.0, radius), (-radius, 0.0), (0.0, -radius))
+        for idx, (ox, oy) in zip(ring, offsets, strict=True):
+            points[idx] = (cx + ox, cy + oy)
+    return points
 
 
 # --- GazeFilter -----------------------------------------------------------
@@ -184,3 +212,96 @@ def test_gaze_reads_depth_when_available():
     depth = np.full((480, 640), 0.85, dtype=np.float32)
     sample = gaze_from_landmarks(lm, 640, 480, depth_m=depth)
     assert sample.z_m == pytest.approx(0.85)
+
+
+# --- the five-point iris centre -------------------------------------------
+
+
+def test_the_iris_centre_averages_the_whole_ring():
+    """Four more estimates of the same quantity were being thrown away."""
+    points = with_iris_rings(centered_eye())
+    lm = FakeLandmarks(points, size=REFINED_LANDMARK_COUNT)
+    x, y = iris_centre(lm, LEFT_IRIS, LEFT_IRIS_RING)
+    # A symmetric ring must leave the mean exactly where the centre was, or
+    # averaging would shift the measurement and invalidate the calibration.
+    assert (x, y) == pytest.approx(points[LEFT_IRIS], abs=1e-12)
+
+
+def test_a_skewed_ring_pulls_the_centre_as_it_should():
+    """Proof the ring is actually being used, not silently ignored."""
+    points = with_iris_rings(centered_eye())
+    points[LEFT_IRIS_RING[0]] = (points[LEFT_IRIS][0] + 0.05, points[LEFT_IRIS][1])
+    lm = FakeLandmarks(points, size=REFINED_LANDMARK_COUNT)
+    x, _ = iris_centre(lm, LEFT_IRIS, LEFT_IRIS_RING)
+    assert x > points[LEFT_IRIS][0]
+
+
+def test_an_unrefined_landmark_list_uses_the_centre_alone():
+    """FaceMesh without refine_landmarks gives 468 points and no ring. Reading
+    the ring indices anyway would measure from whatever happened to be
+    there."""
+    lm = FakeLandmarks(centered_eye())
+    assert len(lm.landmark) < REFINED_LANDMARK_COUNT
+    x, y = iris_centre(lm, LEFT_IRIS, LEFT_IRIS_RING)
+    assert (x, y) == pytest.approx((0.5, 0.5))
+
+
+# --- the smoothed denominator ---------------------------------------------
+
+
+def test_the_eye_width_is_smoothed_and_the_iris_offset_is_not():
+    """dx is a ratio, so denominator noise multiplies into it. The width moves
+    only with head pose, so it can be smoothed at no lag cost; the iris offset
+    is the signal and must not be."""
+    m = GazeMeasurer(width_alpha=0.5)
+    settled = FakeLandmarks(
+        with_iris_rings(centered_eye(half_width=0.05)), size=REFINED_LANDMARK_COUNT
+    )
+    for _ in range(40):
+        m.measure(settled, 640, 480)
+
+    # One frame where the corners jump but the iris has not moved. A raw
+    # denominator would report a gaze deflection; a smoothed one barely moves.
+    jumped = FakeLandmarks(
+        with_iris_rings(centered_eye(half_width=0.025)), size=REFINED_LANDMARK_COUNT
+    )
+    smoothed = m.measure(jumped, 640, 480)
+    unsmoothed = gaze_from_landmarks(jumped, 640, 480)
+    assert abs(smoothed.dx) <= abs(unsmoothed.dx) + 1e-12
+
+
+def test_a_jumpy_denominator_moves_the_answer_less_when_smoothed():
+    m = GazeMeasurer(width_alpha=0.1)
+    wide = with_iris_rings(centered_eye(half_width=0.05))
+    # Iris displaced a fixed real amount; only the corner spacing rattles.
+    wide[LEFT_IRIS] = (0.52, 0.5)
+    wide = with_iris_rings(wide)
+    for _ in range(60):
+        m.measure(FakeLandmarks(wide, size=REFINED_LANDMARK_COUNT), 640, 480)
+    steady = m.measure(FakeLandmarks(wide, size=REFINED_LANDMARK_COUNT), 640, 480)
+
+    narrow = dict(wide)
+    narrow[LEFT_EYE_OUTER] = (0.5 - 0.04, 0.5)
+    narrow[LEFT_EYE_INNER] = (0.5 + 0.04, 0.5)
+    rattled = m.measure(FakeLandmarks(narrow, size=REFINED_LANDMARK_COUNT), 640, 480)
+    raw = gaze_from_landmarks(
+        FakeLandmarks(narrow, size=REFINED_LANDMARK_COUNT), 640, 480
+    )
+    assert abs(rattled.dx - steady.dx) < abs(raw.dx - steady.dx)
+
+
+def test_reset_forgets_the_smoothed_widths():
+    m = GazeMeasurer(width_alpha=0.5)
+    lm = FakeLandmarks(
+        with_iris_rings(centered_eye(half_width=0.05)), size=REFINED_LANDMARK_COUNT
+    )
+    for _ in range(20):
+        m.measure(lm, 640, 480)
+    m.reset()
+    narrow = FakeLandmarks(
+        with_iris_rings(centered_eye(half_width=0.02)), size=REFINED_LANDMARK_COUNT
+    )
+    # With no state, the first frame after a reset uses its own width.
+    assert m.measure(narrow, 640, 480).dx == pytest.approx(
+        gaze_from_landmarks(narrow, 640, 480).dx
+    )
