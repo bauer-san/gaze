@@ -515,6 +515,8 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 failures = 0
 
             sample = None
+            disparity = None
+            disparity_rejected = 0
             blinded = False
             if captured is not None:
                 frame = captured.color
@@ -528,7 +530,19 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                         results.multi_face_landmarks[0], w, h, captured.depth_m
                     )
                     if raw is not None:
-                        sample = _smooth(raw, filter_x, filter_y)
+                        disparity = raw.disparity
+                        # Conjugate eye movements have no vertical vergence,
+                        # so the eyes disagreeing in dy is this instrument
+                        # being wrong rather than the operator doing
+                        # anything. Past the threshold the frame is not worth
+                        # folding into the filter.
+                        if (
+                            config.max_eye_disparity > 0
+                            and disparity > config.max_eye_disparity
+                        ):
+                            disparity_rejected += 1
+                        else:
+                            sample = _smooth(raw, filter_x, filter_y)
 
                 # A covered lens still delivers frames at full rate, so read()
                 # cannot see it and the health timer never starts. No depth
@@ -588,7 +602,14 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 status = monitor.update(now, sample, camera_ok=camera_ok)
 
             safety.observe(status, now)
-            metrics.observe(status, fps, camera_ok, captured is not None)
+            metrics.observe(
+                status,
+                fps,
+                camera_ok,
+                captured is not None,
+                disparity,
+                disparity_rejected,
+            )
             metrics.observe_safety(safety, now)
             metrics.observe_machine(machine, now)
 

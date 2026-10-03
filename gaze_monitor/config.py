@@ -79,6 +79,16 @@ class MonitorConfig:
 
     # -- gaze --
     filter_alpha: float = 0.12
+    # Discard a frame when the two eyes disagree vertically by more than
+    # this. Eye movements are conjugate and there is no vertical vergence
+    # worth measuring, so the disagreement is measurement error: a blink
+    # caught halfway, one iris occluded, a head angle too steep for one eye.
+    #
+    # 0 disables it, which is the default, because a threshold set too tight
+    # drops frames an operator needs and the only honest way to pick one is
+    # to watch gaze_eye_disparity on a real face first. Values around 0.1 to
+    # 0.2 are the region to try.
+    max_eye_disparity: float = 0.0
 
     # -- attention thresholds (seconds) --
     warn_after: float = 1.0
@@ -208,6 +218,8 @@ class MonitorConfig:
                 f"{', '.join(SOURCE_NAMES)}, or a '{GST_PREFIX}<pipeline>' string."
             )
 
+        if self.max_eye_disparity < 0:
+            raise ConfigError("max_eye_disparity must be >= 0")
         if not 0.0 < self.filter_alpha <= 1.0:
             raise ConfigError(
                 f"filter_alpha must be in (0, 1], got {self.filter_alpha}"

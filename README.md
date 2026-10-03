@@ -73,6 +73,28 @@ Drop to 640×480 on a slower board — the Pi service does. The calibration is
 unaffected either way: the zone is stored in iris-displacement units, which
 are relative to the face rather than to the frame.
 
+## Why both eyes, and what their disagreement is good for
+
+Gaze is the eyes' shared rotation. Human eye movements are conjugate: both
+eyes rotate together, and their one legitimate difference is vergence, which
+is horizontal and set by how far away the target is. So the two per-eye
+measurements are two readings of one quantity, and averaging them both halves
+the noise and cancels vergence, which is why it is the right operation rather
+than a convenient one.
+
+The useful consequence is that there is no vertical vergence worth measuring.
+Whatever shows up in `dy_left − dy_right` was put there by the instrument,
+not by the operator, which makes it a free and unambiguous read on the noise
+floor. It is exported as `gaze_eye_disparity`. Watch it to tell a tuning
+problem from a tracking problem, and set `max_eye_disparity` once you know
+what your own installation's floor looks like.
+
+MediaPipe will not do any of this for you. It runs its iris model separately
+on each eye crop, with no binocular constraint anywhere in the model, so the
+raw landmarks are genuinely two independent estimates and look far jumpier
+than the measurement behaves. `preview_gaze: both` shows the raw landmarks
+under the estimate if you want to see the difference.
+
 ## Why a depth camera
 
 Gaze is measured as the iris's displacement within the eye — an angle, not a
@@ -255,6 +277,7 @@ The thresholds worth thinking about for a given installation:
 | `clear_after` | 0.4 s | Time back on target before an alarm clears |
 | `fault_after` | 1.0 s | Unusable frames before declaring a sensor fault |
 | `zone_margin` | 0.1 | Tolerance around the calibrated area |
+| `max_eye_disparity` | 0.0 (off) | Reject frames where the two eyes disagree |
 | `filter_alpha` | 0.12 | Gaze smoothing — **per frame, not per second** |
 
 ### filter_alpha depends on your frame rate

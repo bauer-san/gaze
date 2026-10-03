@@ -53,9 +53,18 @@ WIDTH_ALPHA = 0.05
 
 # Eye width is the denominator of the normalisation below. At a steep head
 # angle the two corners converge and the ratio explodes to inf/nan, which
-# then latches permanently into the smoothing filter. Anything narrower than
-# this (as a fraction of frame width) is reported as unmeasurable instead.
-MIN_EYE_WIDTH = 1e-3
+# then latches permanently into the smoothing filter. A narrower eye than
+# this, in pixels, is reported as unmeasurable instead.
+#
+# Pixels rather than a fraction of frame width, because all the geometry here
+# is done in pixels now. Normalised landmark coordinates divide x by the
+# frame width and y by its height, so they are anisotropic on any frame that
+# is not square: a circle in the image is an ellipse in normalised space, and
+# an expression mixing the two axes silently picks up a factor of the aspect
+# ratio. The old dy did exactly that, dividing a normalised-y offset by a
+# scale taken from normalised x, so the same physical eye read 33% higher on
+# 16:9 than on 4:3. Working in pixels makes that class of mistake impossible.
+MIN_EYE_WIDTH_PX = 1.0
 
 
 @dataclass(frozen=True)
@@ -77,6 +86,17 @@ class GazeSample:
     z_m: float
     px: int
     py: int
+    # How far the two eyes disagreed vertically on this frame.
+    #
+    # Free information, and the only unambiguous noise measurement available
+    # here. Eye movements are conjugate: the eyes rotate together, and the
+    # one legitimate difference between them is vergence, which is horizontal
+    # and set by target distance. There is no such thing as vertical
+    # vergence above this instrument's noise floor, so whatever appears in
+    # dy_left - dy_right was put there by the measurement and not by the
+    # operator. Large values mean this frame should not be trusted: a blink
+    # halfway through, an occluded eye, a head angle too steep for one iris.
+    disparity: float = 0.0
 
 
 class GazeFilter:
@@ -146,25 +166,43 @@ def eye_displacement(
     horizontally, and this keeps the two axes on a comparable scale without
     needing eyelid landmarks, which move when the operator blinks.
     """
-    ix, iy = iris_centre(face_landmarks, iris_idx, ring)
+    nx, ny = iris_centre(face_landmarks, iris_idx, ring)
     a = face_landmarks.landmark[corner_a_idx]
     b = face_landmarks.landmark[corner_b_idx]
 
-    measured_width = abs(b.x - a.x)
-    if measured_width < MIN_EYE_WIDTH:
+    # Into pixels before any geometry. See MIN_EYE_WIDTH_PX.
+    ix, iy = nx * w, ny * h
+    ax, ay = a.x * w, a.y * h
+    bx, by = b.x * w, b.y * h
+
+    # The eye's own axes, taken from this frame: along the palpebral fissure
+    # and across it. Measuring in image axes instead makes a head tilt read
+    # as a vertical eye movement, because the offset is then projected onto
+    # the wrong pair of directions. It went as tan(roll), so ten degrees of
+    # head tilt -- which people do constantly -- produced a tenth of the
+    # calibrated zone in false elevation.
+    vx, vy = bx - ax, by - ay
+    measured_width = math.hypot(vx, vy)
+    if measured_width < MIN_EYE_WIDTH_PX:
         return None
     # A caller holding a smoothed width passes it in; the raw measurement
     # still has to pass the degeneracy check above, because a smoothed width
     # from a better frame would otherwise license dividing by this bad one.
     if eye_width is None:
         eye_width = measured_width
-    elif eye_width < MIN_EYE_WIDTH:
+    elif eye_width < MIN_EYE_WIDTH_PX:
         return None
 
-    cx = (a.x + b.x) / 2.0
-    cy = (a.y + b.y) / 2.0
-    dx = (ix - cx) / (eye_width / 2.0)
-    dy = (iy - cy) / (eye_width / 4.0)
+    # Orientation from this frame, scale possibly smoothed from many. Head
+    # orientation is fast and has to be current; the scale is slow.
+    ux, uy = vx / measured_width, vy / measured_width
+    ox = ix - (ax + bx) / 2.0
+    oy = iy - (ay + by) / 2.0
+    along = ox * ux + oy * uy
+    across = -ox * uy + oy * ux
+
+    dx = along / (eye_width / 2.0)
+    dy = across / (eye_width / 4.0)
 
     if not (math.isfinite(dx) and math.isfinite(dy)):
         return None
@@ -172,8 +210,8 @@ def eye_displacement(
     return EyeMeasurement(
         dx=dx,
         dy=dy,
-        px=int(np.clip(ix, 0.0, 1.0) * (w - 1)),
-        py=int(np.clip(iy, 0.0, 1.0) * (h - 1)),
+        px=int(np.clip(nx, 0.0, 1.0) * (w - 1)),
+        py=int(np.clip(ny, 0.0, 1.0) * (h - 1)),
     )
 
 
@@ -186,7 +224,7 @@ EYES = (
 )
 
 
-def project_gaze(landmarks: np.ndarray, dx: float, dy: float):
+def project_gaze(landmarks: np.ndarray, dx: float, dy: float, w: int, h: int):
     """Where each iris would sit if both eyes shared one gaze estimate.
 
     The exact inverse of :func:`eye_displacement`, and deliberately written
@@ -204,6 +242,9 @@ def project_gaze(landmarks: np.ndarray, dx: float, dy: float):
     MediaPipe infers each iris from its own eye crop with no binocular
     constraint anywhere in the model.
 
+    Needs the frame size, because the geometry is done in pixels and
+    normalised coordinates are anisotropic on a frame that is not square.
+
     Returns one normalised ``(x, y)`` per eye, or ``None`` for an eye whose
     corners are too close together to divide by.
     """
@@ -212,14 +253,24 @@ def project_gaze(landmarks: np.ndarray, dx: float, dy: float):
         if max(a_idx, b_idx) >= len(landmarks):
             out.append(None)
             continue
-        ax, ay = float(landmarks[a_idx][0]), float(landmarks[a_idx][1])
-        bx, by = float(landmarks[b_idx][0]), float(landmarks[b_idx][1])
-        eye_width = abs(bx - ax)
-        if eye_width < MIN_EYE_WIDTH:
+        ax, ay = float(landmarks[a_idx][0]) * w, float(landmarks[a_idx][1]) * h
+        bx, by = float(landmarks[b_idx][0]) * w, float(landmarks[b_idx][1]) * h
+        vx, vy = bx - ax, by - ay
+        eye_width = math.hypot(vx, vy)
+        if eye_width < MIN_EYE_WIDTH_PX:
             out.append(None)
             continue
+        ux, uy = vx / eye_width, vy / eye_width
+        along = dx * eye_width / 2.0
+        across = dy * eye_width / 4.0
         cx, cy = (ax + bx) / 2.0, (ay + by) / 2.0
-        out.append((cx + dx * eye_width / 2.0, cy + dy * eye_width / 4.0))
+        # Back out of the eye's frame into pixels, then into normalised.
+        out.append(
+            (
+                (cx + along * ux - across * uy) / w,
+                (cy + along * uy + across * ux) / h,
+            )
+        )
     return out
 
 
@@ -288,9 +339,9 @@ class GazeMeasurer:
         """
         eyes = []
         for (iris, a_idx, b_idx, ring), width in zip(EYES, self._widths, strict=True):
-            raw_width = abs(
-                face_landmarks.landmark[b_idx].x - face_landmarks.landmark[a_idx].x
-            )
+            a = face_landmarks.landmark[a_idx]
+            b = face_landmarks.landmark[b_idx]
+            raw_width = math.hypot((b.x - a.x) * w, (b.y - a.y) * h)
             smoothed = width.apply(raw_width)
             eyes.append(
                 eye_displacement(
@@ -311,11 +362,16 @@ class GazeMeasurer:
         px = (left.px + right.px) // 2
         py = (left.py + right.py) // 2
         return GazeSample(
+            # The version component: the eyes' shared rotation, which is the
+            # gaze direction. Averaging also cancels vergence, the one real
+            # difference between the two eyes, which is why it is the right
+            # operation and not merely a convenient one.
             dx=(left.dx + right.dx) / 2.0,
             dy=(left.dy + right.dy) / 2.0,
             z_m=depth_at(depth_m, px, py),
             px=px,
             py=py,
+            disparity=abs(left.dy - right.dy),
         )
 
 

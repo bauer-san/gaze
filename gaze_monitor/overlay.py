@@ -170,7 +170,7 @@ def render(
 
         fused = None
         if gaze is not None and gaze_mode in ("fused", "both"):
-            fused = project_gaze(landmarks, gaze[0], gaze[1])
+            fused = project_gaze(landmarks, gaze[0], gaze[1], w, h)
 
         if gaze_mode == "raw" or gaze_mode == "both" or fused is None:
             for idx in _RAW_IRISES:

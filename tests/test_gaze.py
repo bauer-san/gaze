@@ -305,3 +305,86 @@ def test_reset_forgets_the_smoothed_widths():
     assert m.measure(narrow, 640, 480).dx == pytest.approx(
         gaze_from_landmarks(narrow, 640, 480).dx
     )
+
+
+# --- the eye's own frame --------------------------------------------------
+
+
+def rolled_eye(degrees, along=0.3, across=0.0, half_width=0.05, w=640, h=480):
+    """One eye rotated by a head roll, with the iris fixed *in the eye*.
+
+    Built in pixels and converted back, so the rotation is a real rotation
+    rather than one distorted by the anisotropy of normalised coordinates.
+    """
+    t = math.radians(degrees)
+    c, s = math.cos(t), math.sin(t)
+    half_px = half_width * w
+    ux, uy = c, s
+    offset = along * half_px + 0.0
+    ox = offset * ux - (across * half_px / 2.0) * uy
+    oy = offset * uy + (across * half_px / 2.0) * ux
+    cx, cy = 0.5 * w, 0.5 * h
+    return {
+        LEFT_EYE_OUTER: ((cx - half_px * c) / w, (cy - half_px * s) / h),
+        LEFT_EYE_INNER: ((cx + half_px * c) / w, (cy + half_px * s) / h),
+        LEFT_IRIS: ((cx + ox) / w, (cy + oy) / h),
+    }
+
+
+@pytest.mark.parametrize("degrees", [0, 10, 20, 30, 45, -25])
+def test_head_roll_does_not_leak_into_vertical_gaze(degrees):
+    """It used to, as tan(roll): ten degrees of head tilt produced a tenth of
+    the calibrated zone in false elevation, because the iris offset was
+    projected onto the image axes instead of the eye's own."""
+    lm = FakeLandmarks(rolled_eye(degrees), size=REFINED_LANDMARK_COUNT)
+    eye = eye_displacement(lm, LEFT_IRIS, LEFT_EYE_OUTER, LEFT_EYE_INNER, 640, 480)
+    assert eye.dx == pytest.approx(0.3, abs=1e-6)
+    assert eye.dy == pytest.approx(0.0, abs=1e-6)
+
+
+def test_the_reading_does_not_depend_on_the_frame_aspect_ratio():
+    """dy used to divide a normalised-y offset by a scale taken from
+    normalised x, so it carried a factor of w/h and the same physical eye
+    read 33% higher on 16:9 than on 4:3."""
+    readings = []
+    for w, h in ((640, 480), (1280, 720), (800, 800)):
+        k = w / 640.0
+        eye_px, up_px = 40.0 * k, 6.0 * k
+        pts = {
+            LEFT_EYE_OUTER: (0.5 - eye_px / 2 / w, 0.5),
+            LEFT_EYE_INNER: (0.5 + eye_px / 2 / w, 0.5),
+            LEFT_IRIS: (0.5, 0.5 - up_px / h),
+        }
+        lm = FakeLandmarks(pts, size=REFINED_LANDMARK_COUNT)
+        m = eye_displacement(lm, LEFT_IRIS, LEFT_EYE_OUTER, LEFT_EYE_INNER, w, h)
+        readings.append((m.dx, m.dy))
+    assert readings[0] == pytest.approx(readings[1], abs=1e-9)
+    assert readings[0] == pytest.approx(readings[2], abs=1e-9)
+
+
+# --- the binocular noise measurement -------------------------------------
+
+
+def test_eyes_that_agree_report_no_disparity():
+    lm = FakeLandmarks(with_iris_rings(centered_eye()), size=REFINED_LANDMARK_COUNT)
+    assert gaze_from_landmarks(lm, 640, 480).disparity == pytest.approx(0.0)
+
+
+def test_eyes_that_disagree_vertically_report_it():
+    """There is no vertical vergence, so this can only be measurement error
+    and is the one honest read on the noise floor available here."""
+    pts = centered_eye()
+    pts[RIGHT_IRIS] = (pts[RIGHT_IRIS][0], pts[RIGHT_IRIS][1] + 0.01)
+    lm = FakeLandmarks(with_iris_rings(pts), size=REFINED_LANDMARK_COUNT)
+    sample = gaze_from_landmarks(lm, 640, 480)
+    assert sample.disparity > 0.1
+
+
+def test_convergence_is_not_counted_as_disagreement():
+    """Horizontal difference between the eyes is vergence, set by target
+    distance. It is real, it is not error, and it must not be flagged."""
+    pts = centered_eye()
+    pts[LEFT_IRIS] = (pts[LEFT_IRIS][0] + 0.01, pts[LEFT_IRIS][1])
+    pts[RIGHT_IRIS] = (pts[RIGHT_IRIS][0] - 0.01, pts[RIGHT_IRIS][1])
+    lm = FakeLandmarks(with_iris_rings(pts), size=REFINED_LANDMARK_COUNT)
+    assert gaze_from_landmarks(lm, 640, 480).disparity == pytest.approx(0.0)
