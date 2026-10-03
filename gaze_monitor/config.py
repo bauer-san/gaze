@@ -48,8 +48,20 @@ class MonitorConfig:
     source: str = "realsense"
     device: int = 0
     serial: str | None = None
-    camera_width: int = 640
-    camera_height: int = 480
+    # 1280x720 rather than 640x480, for two reasons that both come from the
+    # D435i's sensor being 16:9. A 4:3 mode is produced by cropping the
+    # sides, so 640x480 gives 55.7 degrees of horizontal field where
+    # 1280x720 gives 70.4, measured from the colour intrinsics on hardware.
+    # And the iris is the thing being measured: at the 0.65 m working
+    # distance it spans about 11 px at 640x480 and about 16 at 1280x720,
+    # which is where the gaze angle's precision actually comes from.
+    #
+    # It costs about 1.5 ms per frame of a 33 ms budget (depth-to-colour
+    # alignment 1.1 -> 2.2 ms, the rest noise), because MediaPipe runs its
+    # mesh and iris models on fixed-size ROI crops and so barely notices.
+    # Slower boards may still want 640x480; the Pi service asks for it.
+    camera_width: int = 1280
+    camera_height: int = 720
     fps: int = 30
 
     # -- display --

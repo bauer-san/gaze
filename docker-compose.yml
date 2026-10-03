@@ -245,6 +245,14 @@ services:
       - realsense
       - --alpha
       - "0.35"
+      # A Pi 4 is the one tier where the default 1280x720 is not obviously
+      # affordable: depth-to-colour alignment is CPU work and this board has
+      # the least of it. Unmeasured, so it keeps the smaller frame until
+      # somebody runs it.
+      - --camera-width
+      - "640"
+      - --camera-height
+      - "480"
       - --headless
       - --preview-port
       - "${GAZE_PREVIEW_PORT:-0}"

@@ -47,6 +47,32 @@ What you will *not* see is distance compensation, because a webcam has no
 depth. That is the one thing worth buying hardware for, and the next section
 explains why.
 
+## Capture resolution
+
+The default is 1280×720, which is worth knowing about because it is not the
+obvious choice for a system that only needs to find two irises.
+
+The D435i's colour sensor is 16:9, so a 4:3 mode is produced by cropping the
+sides. Read off the colour intrinsics on hardware, 640×480 gives 55.7° of
+horizontal field and 1280×720 gives 70.4°, with 43.3° vertical either way.
+The wider field is free. The resolution is not wasted either: what limits the
+gaze angle is how many pixels land on the iris, and at the 0.65 m working
+distance that goes from about 11 px across to about 16.
+
+| Mode | H FOV | At 0.65 m | face (15 cm) | iris (11.7 mm) |
+| --- | --- | --- | --- | --- |
+| 640×480 | 55.7° | 69 cm wide | 140 px | 11 px |
+| 1280×720 | 70.4° | 92 cm wide | 209 px | 16 px |
+
+It costs about 1.5 ms per frame out of a 33 ms budget, nearly all of it
+depth-to-colour alignment going from 1.1 to 2.2 ms. MediaPipe barely notices,
+because its mesh and iris models run on fixed-size ROI crops rather than on
+the frame, so the full-frame pass moves only from 5.18 to 5.33 ms.
+
+Drop to 640×480 on a slower board — the Pi service does. The calibration is
+unaffected either way: the zone is stored in iris-displacement units, which
+are relative to the face rather than to the frame.
+
 ## Why a depth camera
 
 Gaze is measured as the iris's displacement within the eye — an angle, not a
@@ -74,10 +100,10 @@ Four tiers. Each adds one capability to the one above it.
 
 Prices are rough and worth checking; the part names are the precise thing.
 
-**Tier 2 is what has actually been run.** Measured on the Jetson: 22.8 fps end
-to end at 640×480, ~10.5 % CPU, GPU idle, 55 °C. See
-[`jetson/CI_NOTES.md`](jetson/CI_NOTES.md) for what has been verified on
-hardware and what has not.
+**Tier 2 is what has actually been run.** Measured on the Jetson: 30.0 fps end
+to end at 1280×720 with no dropped frames, ~8 % of 6 cores, GPU idle, 53 °C,
+6.6 W. See [`jetson/CI_NOTES.md`](jetson/CI_NOTES.md) for what has been
+verified on hardware and what has not.
 
 **Tier 2b needs no GPU.** MediaPipe runs on the CPU through XNNPACK — on the
 Jetson the GPU was measured at flat zero utilisation for an entire run — so
@@ -237,10 +263,10 @@ Every threshold above is in seconds. `filter_alpha` is not: it is an
 exponential moving average applied once per frame, so its time constant is
 `1/alpha` frames divided by whatever frame rate you actually get.
 
-| `filter_alpha` | 30 fps | 22.8 fps (Jetson, measured) | 6 fps |
+| `filter_alpha` | 30 fps (Jetson, measured) | 15 fps | 6 fps |
 | --- | --- | --- | --- |
-| 0.12 (default) | 0.28 s | 0.37 s | **1.39 s** |
-| 0.35 | 0.10 s | 0.13 s | 0.48 s |
+| 0.12 (default) | 0.28 s | 0.56 s | **1.39 s** |
+| 0.35 | 0.10 s | 0.19 s | 0.48 s |
 
 At the Jetson's measured rate the default sits comfortably inside
 `warn_after: 1.0`. On slower hardware it does not: at 6 fps the gaze estimate
@@ -280,6 +306,17 @@ black . && ruff check . && flake8 .
 
 CI runs the same three linters and the tests on Python 3.10 and 3.12. Tests
 that need OpenCV skip themselves when it is absent.
+
+## Tabled ideas
+
+[`docs/wider-field-of-view.md`](docs/wider-field-of-view.md) works through
+whether this device could watch head, torso, arms and hands and classify
+dangerous working behaviour, rather than only inattention. Nothing is built.
+It is recorded because the measurements were taken on the hardware and the
+conclusion is not the obvious one: latency and spatial precision rule out a
+vision language model as the detector, the useful tiers are geometric, and
+widening the field of view is in direct tension with the gaze measurement
+that already works.
 
 ## Extending
 

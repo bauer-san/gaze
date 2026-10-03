@@ -6,8 +6,23 @@
 source: realsense       # realsense | webcam | kinect | jetson | gst:<pipeline>
 device: 0               # V4L2/CSI index (webcam and jetson sources)
 # serial:               # pin a specific RealSense by serial number
-camera_width: 640
-camera_height: 480
+# 1280x720, not 640x480. The D435i's colour sensor is 16:9, so a 4:3 mode is
+# made by cropping the sides: measured from the colour intrinsics, 640x480
+# gives 55.7 degrees of horizontal field and 1280x720 gives 70.4. The extra
+# field is free, and the resolution is not wasted either -- what limits the
+# gaze angle is how many pixels land on the iris, and at the 0.65 m working
+# distance that goes from about 11 px to about 16.
+#
+# Measured cost on a Jetson Orin Nano Super: about 1.5 ms per frame out of a
+# 33 ms budget, nearly all of it depth-to-colour alignment going from 1.1 to
+# 2.2 ms. MediaPipe hardly notices, because its mesh and iris models run on
+# fixed-size ROI crops rather than on the frame. Still 30.0 fps, no drops.
+#
+# Drop to 640x480 on a slower board. The calibration is unaffected either
+# way: the zone is stored in iris-displacement units, which are relative to
+# the face rather than to the frame, so it survives a resolution change.
+camera_width: 1280
+camera_height: 720
 fps: 30
 
 # --- display --------------------------------------------------------------
@@ -113,7 +128,7 @@ brake_on_fault: false      # a fouled lens should usually be loud, not stopping
 #   gpio   one line on this board -- safety_gpio_chip, safety_gpio_line.
 #                                  No adapter and no bus, which is why it is
 #                                  the choice on a board with no spare USB.
-safety_transport: tcp
+safety_transport: gpio
 
 safety_host: ""            # tcp only; empty disables; 127.0.0.1 to loop back
 safety_port: 502
