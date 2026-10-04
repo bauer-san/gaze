@@ -479,6 +479,10 @@ def test_the_gaze_estimate_reaches_the_renderer_and_the_json():
 
     payload = json.loads(p.landmarks_json(timeout=1.0))
     assert payload["gaze"] == {"dx": 0.25, "dy": -0.5}
+    # Self-describing: a consumer doing its own geometry must not have to be
+    # told the resolution, because guessing it wrong rescales the vertical
+    # reading by the aspect ratio.
+    assert payload["size"] == {"width": 640, "height": 480}
 
 
 def test_a_frame_with_no_usable_sample_reports_a_null_gaze():

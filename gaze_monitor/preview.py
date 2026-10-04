@@ -450,6 +450,12 @@ class Preview:
             {
                 "frame": seq,
                 "count": len(points),
+                # The frame size, so a consumer doing its own geometry does
+                # not have to be told the resolution out of band. Getting it
+                # wrong scales the vertical reading by the aspect ratio,
+                # which is precisely the bug this field exists to avoid
+                # reintroducing downstream.
+                "size": {"width": item.size[1], "height": item.size[0]},
                 "age_seconds": round(max(0.0, time.monotonic() - item.captured_at), 3),
                 # The smoothed both-eye estimate, in the same normalised
                 # iris-displacement units the attention zone is calibrated

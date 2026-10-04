@@ -95,6 +95,33 @@ raw landmarks are genuinely two independent estimates and look far jumpier
 than the measurement behaves. `preview_gaze: both` shows the raw landmarks
 under the estimate if you want to see the difference.
 
+### Measuring it
+
+[`tools/gaze_noise.py`](tools/gaze_noise.py) captures raw landmarks from the
+preview and reports the pipeline's noise floor. Standard library only, so a
+bare `python3` runs it.
+
+```
+python3 tools/gaze_noise.py capture --seconds 30 --out fixation.jsonl
+python3 tools/gaze_noise.py analyse fixation.jsonl
+```
+
+Both the old and the current eye-displacement algorithms are implemented
+inside it, so a change can be judged on one capture with both applied to
+identical frames, rather than on two sessions where any difference in how the
+operator happened to sit contaminates the comparison. It reports noise in
+millimetres of iris travel, because the two scale `dy` differently and raw
+numbers are not comparable.
+
+Two protocols, and the protocol matters more than anything in the tool. The
+noise estimate uses successive frame differences, which separates noise from
+signal only when the signal barely moves between samples:
+
+| Run | What to do | What it tells you |
+| --- | --- | --- |
+| fixation | Sit still, head level, stare at one fixed point | The noise floor, and a `max_eye_disparity` to use |
+| roll | Keep staring at that point, tilt your head slowly left and right | Whether head posture is leaking into the reading |
+
 ## Why a depth camera
 
 Gaze is measured as the iris's displacement within the eye — an angle, not a
