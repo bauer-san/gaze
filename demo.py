@@ -123,6 +123,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Gaze smoothing factor (0-1]; lower is smoother but slower",
     )
+    camera_or_gaze = parser.add_argument_group("gaze")
+    camera_or_gaze.add_argument(
+        "--max-eye-disparity",
+        type=float,
+        default=None,
+        help=(
+            "Discard a frame when the two eyes disagree vertically by more "
+            "than this; 0 disables. Conjugate eye movements have no vertical "
+            "vergence, so the disagreement is measurement error. Watch "
+            "gaze_eye_disparity before picking a number."
+        ),
+    )
 
     safety = parser.add_argument_group("safety output")
     safety.add_argument(
@@ -259,6 +271,16 @@ def build_parser() -> argparse.ArgumentParser:
             "capture loop."
         ),
     )
+    preview.add_argument(
+        "--preview-gaze",
+        choices=["fused", "raw", "both"],
+        default=None,
+        help=(
+            "What the iris markers show: the smoothed both-eye estimate "
+            "(fused, the default), MediaPipe's raw per-eye landmarks (raw), "
+            "or fused over raw for comparing them (both)."
+        ),
+    )
     preview.add_argument("--preview-quality", type=int, default=None)
     preview.add_argument("--preview-max-fps", type=float, default=None)
 
@@ -319,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
                 "tui",
                 "debug",
                 "filter_alpha",
+                "max_eye_disparity",
                 "warn_after",
                 "alert_after",
                 "clear_after",
@@ -330,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
                 "preview_bind",
                 "preview_draw",
                 "preview_background",
+                "preview_gaze",
                 "preview_quality",
                 "preview_max_fps",
                 "brake_after",

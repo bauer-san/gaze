@@ -36,6 +36,9 @@ PARITIES = ("N", "E", "O")
 # gaze_monitor.preview, as a literal for the same reason as the tuples above.
 PREVIEW_DRAW_MODES = ("none", "irises", "contours", "mesh")
 PREVIEW_BACKGROUNDS = ("black", "camera")
+# What the preview's iris markers mean. Mirrors GAZE_MODES in
+# gaze_monitor.overlay, as a literal for the same reason as the tuples above.
+PREVIEW_GAZE_MODES = ("fused", "raw", "both")
 
 
 class ConfigError(ValueError):
@@ -76,6 +79,16 @@ class MonitorConfig:
 
     # -- gaze --
     filter_alpha: float = 0.12
+    # Discard a frame when the two eyes disagree vertically by more than
+    # this. Eye movements are conjugate and there is no vertical vergence
+    # worth measuring, so the disagreement is measurement error: a blink
+    # caught halfway, one iris occluded, a head angle too steep for one eye.
+    #
+    # 0 disables it, which is the default, because a threshold set too tight
+    # drops frames an operator needs and the only honest way to pick one is
+    # to watch gaze_eye_disparity on a real face first. Values around 0.1 to
+    # 0.2 are the region to try.
+    max_eye_disparity: float = 0.0
 
     # -- attention thresholds (seconds) --
     warn_after: float = 1.0
@@ -176,6 +189,15 @@ class MonitorConfig:
     # serves geometry and no picture of anyone. "camera" shows the live image
     # underneath, which is what answers "why is tracking poor here".
     preview_background: str = "black"
+    # What the iris markers show. "fused" is the estimate: both eyes placed
+    # from one shared, smoothed (dx, dy), so they move together the way real
+    # eyes do. "raw" is MediaPipe's per-eye landmarks, which jitter
+    # independently because its iris model runs on each eye crop separately
+    # with no binocular constraint in it. "both" draws fused bright over raw
+    # dim, which is the one to use when judging whether the smoothing is
+    # right. The default is the estimate, because a preview that disagrees
+    # with the measurement is worse than no preview.
+    preview_gaze: str = "fused"
 
     # -- metrics --
     # TCP port for the Prometheus exporter; 0 disables it. Off by default
@@ -196,6 +218,8 @@ class MonitorConfig:
                 f"{', '.join(SOURCE_NAMES)}, or a '{GST_PREFIX}<pipeline>' string."
             )
 
+        if self.max_eye_disparity < 0:
+            raise ConfigError("max_eye_disparity must be >= 0")
         if not 0.0 < self.filter_alpha <= 1.0:
             raise ConfigError(
                 f"filter_alpha must be in (0, 1], got {self.filter_alpha}"
@@ -313,6 +337,11 @@ class MonitorConfig:
                 f"preview_background must be one of "
                 f"{', '.join(PREVIEW_BACKGROUNDS)}, "
                 f"got {self.preview_background!r}"
+            )
+        if self.preview_gaze not in PREVIEW_GAZE_MODES:
+            raise ConfigError(
+                f"preview_gaze must be one of {', '.join(PREVIEW_GAZE_MODES)}, "
+                f"got {self.preview_gaze!r}"
             )
         if not 1 <= self.preview_quality <= 100:
             raise ConfigError(

@@ -33,7 +33,7 @@ from .calibration import (
 )
 from .capture import CameraError, create_source
 from .config import MonitorConfig
-from .gaze import GazeFilter, gaze_from_landmarks
+from .gaze import GazeFilter, GazeMeasurer
 from .machine import MachineReader
 from .metrics import Metrics
 from .overlay import extract as extract_landmarks
@@ -443,6 +443,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     calibrating = record is None
     filter_x = GazeFilter(alpha=config.filter_alpha)
     filter_y = GazeFilter(alpha=config.filter_alpha)
+    measurer = GazeMeasurer()
 
     cam = create_source(
         config.source,
@@ -514,6 +515,8 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 failures = 0
 
             sample = None
+            disparity = None
+            disparity_rejected = 0
             blinded = False
             if captured is not None:
                 frame = captured.color
@@ -523,11 +526,23 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 results = face_mesh.process(rgb)
                 face_seen = bool(results.multi_face_landmarks)
                 if face_seen:
-                    raw = gaze_from_landmarks(
+                    raw = measurer.measure(
                         results.multi_face_landmarks[0], w, h, captured.depth_m
                     )
                     if raw is not None:
-                        sample = _smooth(raw, filter_x, filter_y)
+                        disparity = raw.disparity
+                        # Conjugate eye movements have no vertical vergence,
+                        # so the eyes disagreeing in dy is this instrument
+                        # being wrong rather than the operator doing
+                        # anything. Past the threshold the frame is not worth
+                        # folding into the filter.
+                        if (
+                            config.max_eye_disparity > 0
+                            and disparity > config.max_eye_disparity
+                        ):
+                            disparity_rejected += 1
+                        else:
+                            sample = _smooth(raw, filter_x, filter_y)
 
                 # A covered lens still delivers frames at full rate, so read()
                 # cannot see it and the health timer never starts. No depth
@@ -551,6 +566,10 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                             else None
                         ),
                         now,
+                        # The smoothed estimate, not the raw sample. What the
+                        # preview is for is showing what the monitor
+                        # believes, and this is that.
+                        None if sample is None else (sample.dx, sample.dy),
                     )
 
             camera_ok = failures < FAILURES_BEFORE_UNHEALTHY and not blinded
@@ -583,7 +602,14 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 status = monitor.update(now, sample, camera_ok=camera_ok)
 
             safety.observe(status, now)
-            metrics.observe(status, fps, camera_ok, captured is not None)
+            metrics.observe(
+                status,
+                fps,
+                camera_ok,
+                captured is not None,
+                disparity,
+                disparity_rejected,
+            )
             metrics.observe_safety(safety, now)
             metrics.observe_machine(machine, now)
 
@@ -612,6 +638,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 monitor.reset()
                 filter_x.reset()
                 filter_y.reset()
+                measurer.reset()
                 calibrating = True
                 message = ""
     except KeyboardInterrupt:

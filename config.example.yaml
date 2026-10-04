@@ -101,6 +101,17 @@ preview_draw: mesh         # none | irises | contours | mesh
 # is what answers "why is tracking poor at this station" -- backlight,
 # framing, a lens somebody has leaned a board against.
 preview_background: black  # black | camera
+
+# What the iris markers show.
+#   fused  the estimate: both eyes placed from one shared, smoothed (dx, dy),
+#          so they move together the way real eyes do. The default.
+#   raw    MediaPipe's per-eye iris landmarks. These jitter independently,
+#          because its iris model runs on each eye crop separately with no
+#          binocular constraint anywhere in it. Useful for judging tracking,
+#          misleading as a picture of what the monitor believes.
+#   both   fused bright over raw dim. The one to use when deciding whether
+#          filter_alpha is right, because you can see what it removed.
+preview_gaze: fused
 preview_quality: 80        # JPEG quality
 preview_max_fps: 10.0      # cap per viewer; 0 removes the cap
 
@@ -200,6 +211,19 @@ machine_address_offset: -1
 
 # Gaze smoothing (0-1]. Lower is steadier but slower to react.
 filter_alpha: 0.12
+
+# Discard a frame when the two eyes disagree vertically by more than this.
+# Eye movements are conjugate: the eyes rotate together, and their one real
+# difference is vergence, which is horizontal and set by target distance.
+# There is no vertical vergence worth measuring, so vertical disagreement is
+# this instrument being wrong -- a blink caught halfway, one iris occluded, a
+# head angle too steep for one eye.
+#
+# 0 disables it, and that is the default. A threshold set too tight drops
+# frames the operator needs, and the only honest way to pick one is to watch
+# gaze_eye_disparity on a real face first. Somewhere around 0.1 to 0.2 is the
+# region to try. gaze_frames_rejected_disparity_total counts what it dropped.
+max_eye_disparity: 0.0
 
 # --- calibration ----------------------------------------------------------
 # Commissioning only: the four corners are captured once and reloaded on every

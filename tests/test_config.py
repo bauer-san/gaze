@@ -243,3 +243,18 @@ def test_the_preview_draws_on_black_by_default():
 def test_an_unknown_preview_background_is_rejected():
     with pytest.raises(ConfigError, match="preview_background"):
         build_config({"preview_background": "greenscreen"})
+
+
+def test_an_unknown_preview_gaze_mode_is_refused():
+    with pytest.raises(ConfigError, match="preview_gaze"):
+        build_config({"preview_gaze": "telepathy"})
+
+
+def test_a_negative_eye_disparity_threshold_is_refused():
+    with pytest.raises(ConfigError, match="max_eye_disparity"):
+        build_config({"max_eye_disparity": -0.1})
+
+
+def test_the_eye_disparity_threshold_is_off_by_default():
+    """A threshold set without measuring drops frames the operator needs."""
+    assert build_config({}).max_eye_disparity == 0.0

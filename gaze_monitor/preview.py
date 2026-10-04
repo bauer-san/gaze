@@ -37,6 +37,7 @@ import logging
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import NamedTuple
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,22 @@ BACKGROUNDS = ("black", "camera")
 # stream disconnects, and /frame.jpg would answer with whatever was last
 # left in the slot, or nothing at all.
 ONESHOT_WARM_SECONDS = 2.0
+
+
+class Offered(NamedTuple):
+    """One frame on its way to the HTTP threads.
+
+    Named rather than a bare tuple: this held four fields, gained a fifth,
+    and the arity change broke every site that unpacked it at once. The next
+    field will not do that.
+    """
+
+    image: object | None
+    size: tuple[int, int]
+    landmarks: object | None
+    captured_at: float
+    gaze: tuple[float, float] | None
+
 
 BOUNDARY = "gazeframe"
 
@@ -231,6 +248,7 @@ class Preview:
         self.max_fps = float(getattr(config, "preview_max_fps", 10.0))
         self.draw = getattr(config, "preview_draw", "mesh")
         self.background = getattr(config, "preview_background", "black")
+        self.gaze_mode = getattr(config, "preview_gaze", "fused")
         self.enabled = self.port > 0
 
         self._renderer = renderer
@@ -331,7 +349,7 @@ class Preview:
         with self._lock:
             return self._viewers > 0 or now < self._wanted_until
 
-    def offer(self, frame, landmarks, now: float) -> None:
+    def offer(self, frame, landmarks, now: float, gaze=None) -> None:
         """Hand over the newest frame. Called from the capture loop.
 
         On the default black background the pixels are not taken at all, only
@@ -342,11 +360,15 @@ class Preview:
         When the camera image is wanted it is copied, because the capture
         backend reuses its buffer and an HTTP thread encoding a frame that is
         being overwritten underneath it produces a torn image at best.
+
+        ``gaze`` is the smoothed both-eye estimate as a ``(dx, dy)`` pair, so
+        the overlay can draw what the monitor believes rather than the raw
+        per-eye landmarks. Two floats, taken as read: no copy needed.
         """
         if not self.wants_frames(now):
             return
         image = frame.copy() if self.background == "camera" else None
-        self._slot.put((image, frame.shape[:2], landmarks, now))
+        self._slot.put(Offered(image, frame.shape[:2], landmarks, now, gaze))
         self.frames_offered += 1
 
     # -- from the HTTP threads ---------------------------------------------
@@ -385,8 +407,15 @@ class Preview:
         with self._lock:
             if self._encoded_seq == seq and self._encoded is not None:
                 return self._encoded
-        frame, size, landmarks, _ = item
-        jpeg = self._renderer(frame, size, landmarks, self.draw, self.quality)
+        jpeg = self._renderer(
+            item.image,
+            item.size,
+            item.landmarks,
+            self.draw,
+            self.quality,
+            item.gaze,
+            self.gaze_mode,
+        )
         with self._lock:
             self._encoded_seq = seq
             self._encoded = jpeg
@@ -416,13 +445,22 @@ class Preview:
             seq, item = self._slot.wait(seq, timeout)
         if item is None:
             return None
-        _, _, landmarks, captured_at = item
-        points = [] if landmarks is None else _as_list(landmarks)
+        points = [] if item.landmarks is None else _as_list(item.landmarks)
         return json.dumps(
             {
                 "frame": seq,
                 "count": len(points),
-                "age_seconds": round(max(0.0, time.monotonic() - captured_at), 3),
+                "age_seconds": round(max(0.0, time.monotonic() - item.captured_at), 3),
+                # The smoothed both-eye estimate, in the same normalised
+                # iris-displacement units the attention zone is calibrated
+                # in. null when no usable sample came off this frame. Here
+                # so that a before-and-after on the smoothing can be a
+                # measurement rather than an impression.
+                "gaze": (
+                    None
+                    if item.gaze is None
+                    else {"dx": round(item.gaze[0], 5), "dy": round(item.gaze[1], 5)}
+                ),
                 # Normalised to the frame: x and y in [0, 1], z relative to
                 # the head centre in the same scale as x.
                 "points": points,

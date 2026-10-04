@@ -106,6 +106,17 @@ class Metrics:
             "Distance the zone was calibrated at, for comparison with the live one",
             registry=reg,
         )
+        self._disparity = Gauge(
+            "gaze_eye_disparity",
+            "Vertical disagreement between the two eyes; a noise floor, "
+            "since conjugate eye movements have no vertical vergence",
+            registry=reg,
+        )
+        self._disparity_rejected = Counter(
+            "gaze_frames_rejected_disparity",
+            "Frames discarded because the two eyes disagreed too far",
+            registry=reg,
+        )
         self._fps = Gauge(
             "gaze_frame_rate_fps",
             "Frames per second through the pipeline",
@@ -229,8 +240,23 @@ class Metrics:
         if self.enabled:
             self._calibration_distance.set(z_m)
 
-    def observe(self, status, fps: float, camera_ok: bool, got_frame: bool) -> None:
-        """Record one frame."""
+    def observe(
+        self,
+        status,
+        fps: float,
+        camera_ok: bool,
+        got_frame: bool,
+        disparity: float | None = None,
+        disparity_rejected: int = 0,
+    ) -> None:
+        """Record one frame.
+
+        ``disparity`` is how far the two eyes disagreed vertically. Exported
+        because it is a direct read on this instrument's own noise, which
+        nothing else here provides: eye movements are conjugate, so vertical
+        disagreement between the eyes is measurement error by construction.
+        Watch it to tell a tuning problem from a tracking problem.
+        """
         if not self.enabled:
             return
 
@@ -247,6 +273,10 @@ class Metrics:
         self._camera_ok.set(1 if camera_ok else 0)
         self._distance.set(status.z_m)
         self._fps.set(fps)
+        if disparity is not None:
+            self._disparity.set(disparity)
+        if disparity_rejected:
+            self._disparity_rejected.inc(disparity_rejected)
 
         # The edge, not the level: this is what a slow scrape would otherwise
         # miss entirely.
