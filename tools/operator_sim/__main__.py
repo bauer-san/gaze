@@ -6,6 +6,7 @@
     python -m tools.operator_sim snapshot --scenario eyes-only --at 3.0 --out frame.png
     python -m tools.operator_sim live runs/shift -- --tui --recalibrate
     python -m tools.operator_sim placement --x=-0.15,0.1,0.025 --z=0.07,0.19,0.03
+    python -m tools.operator_sim drift
 
 Run from the repository root.
 """
@@ -59,7 +60,7 @@ def _sim_args(p: argparse.ArgumentParser, seconds: float = 60.0) -> None:
         "--aim",
         type=_xyz,
         metavar="X,Y,Z",
-        help="point the camera is aimed at (default: the operator's eyes)",
+        help="point the camera is aimed at (default: the operator's nose bridge)",
     )
 
 
@@ -137,6 +138,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     pl.add_argument("--top", type=int, default=20, help="rows to print")
     pl.add_argument("--csv", type=pathlib.Path)
+
+    dr = sub.add_parser(
+        "drift", help="how far the mount may move after calibration (no rendering)"
+    )
+    dr.add_argument("--scenario", default="shift", choices=sorted(SCENARIOS))
+    dr.add_argument("--seconds", type=float, default=90.0)
+    dr.add_argument("--seed", type=int, default=0)
+    dr.add_argument("--camera", type=_xyz, metavar="X,Y,Z", help="where it was set up")
 
     lv = sub.add_parser("live", help="run the real monitor (demo.py) on a recorded run")
     lv.add_argument("run", type=pathlib.Path, help="a run generated with --save-frames")
@@ -219,6 +228,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "placement":
         return _placement(args)
+
+    if args.command == "drift":
+        import dataclasses
+
+        from .evaluate import format_table
+        from .placement import drift_study
+        from .scene import CameraMount
+
+        mount = CameraMount()
+        if args.camera is not None:
+            mount = dataclasses.replace(mount, position=args.camera)
+        rows = drift_study(
+            mount=mount, scenario=args.scenario, duration=args.seconds, seed=args.seed
+        )
+        print(format_table(rows))
+        return 0
 
     if args.command == "snapshot":
         return _snapshot(args)

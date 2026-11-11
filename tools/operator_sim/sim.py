@@ -14,7 +14,7 @@ from .face import PRESETS, Appearance
 from .mathutil import normalize, yaw_pitch
 from .operator import Operator
 from .render import Renderer, RenderResult, SensorModel
-from .scene import OPERATOR_EYES, Scene, angular_size_deg
+from .scene import OPERATOR_FACE, Scene, angular_size_deg
 
 
 @dataclass
@@ -70,7 +70,7 @@ class Simulation:
                 position=(
                     tuple(camera) if camera is not None else self.scene.mount.position
                 ),
-                target=tuple(aim) if aim is not None else OPERATOR_EYES,
+                target=tuple(aim) if aim is not None else OPERATOR_FACE,
             )
             self.scene = dataclasses.replace(self.scene, mount=mount)
         self.fps = fps

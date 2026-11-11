@@ -191,12 +191,12 @@ def test_render_produces_a_realsense_frame():
     r = frame.render
     assert r.color.shape == (180, 320, 3) and r.color.dtype == np.uint8
     assert r.depth_m.shape == (180, 320) and r.depth_m.dtype == np.float32
-    # Depth at the operator's face is the truth's distance, to a centimetre.
-    x, y = np.round(r.landmarks_px[[168]].mean(axis=0)).astype(int)  # nose bridge
+    # Depth on the face is the depth of the surface there, to a few mm; the
+    # eyes' centres are a few centimetres further back.
+    x, y = np.round(r.landmarks_px[168]).astype(int)  # nose bridge
     patch = r.depth_m[y - 1 : y + 2, x - 1 : x + 2]
-    assert np.median(patch[patch > 0]) == pytest.approx(
-        frame.truth["distance_m"], abs=0.03
-    )
+    assert np.median(patch[patch > 0]) == pytest.approx(r.landmarks_z[168], abs=0.006)
+    assert 0.0 < frame.truth["distance_m"] - r.landmarks_z[168] < 0.05
     # The face is in frame and the eyes are open and showing.
     assert np.all((r.landmarks_px >= 0) & (r.landmarks_px < [320, 180]))
     assert all(frame.truth["iris_visible"])
@@ -266,3 +266,22 @@ def test_placement_prefers_a_camera_in_line_with_the_operator():
     assert centred["blocked"] == 0.0
     # The camera is above the line of sight to the cut, looking down at the lid.
     assert centred["camera_below_deg"] < 0
+
+
+def test_calibration_tolerates_a_mount_that_creeps():
+    """Turning the camera moves the iris and the eye corners together, so a
+    ball head that creeps after commissioning does not move the zone; only
+    a change of viewpoint does, and slightly."""
+    from tools.operator_sim.placement import drift_study
+
+    drifts = {
+        "none": ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        "tips": ((0.0, 0.0, 0.0), (2.0, 3.0, 5.0)),
+        "sags": ((0.0, -0.015, 0.0), (0.0, 0.0, 0.0)),
+    }
+    rows = {
+        r["drift"]: r for r in drift_study(drifts, scenario="eyes-only", duration=8.0)
+    }
+    base = rows["none"]["gaze_median_deg"]
+    assert abs(rows["tips"]["gaze_median_deg"] - base) < 0.3
+    assert abs(rows["sags"]["gaze_median_deg"] - base) < 0.8

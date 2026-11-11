@@ -233,3 +233,103 @@ def study(
     allp = np.concatenate([pts, frames.eyes.reshape(-1, 3)])
     static = _static_triangles(scene, allp.min(axis=0) - 0.05, allp.max(axis=0) + 0.05)
     return [score_mount(c, frames, static) for c in candidates]
+
+
+# -- mount drift -----------------------------------------------------------------
+
+# How an articulated or suction mount moves after commissioning: sag under
+# its own weight, creep at a ball joint, a cup losing vacuum. Each is
+# (translation in metres, (yaw, pitch, roll) in degrees), in the camera's
+# terms: pitch positive tips the camera down, yaw positive turns it to the
+# operator's right, roll about the optical axis.
+DRIFTS = {
+    "none": ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+    "tips down 1 deg": ((0.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+    "tips down 3 deg": ((0.0, 0.0, 0.0), (0.0, 3.0, 0.0)),
+    "turns 3 deg": ((0.0, 0.0, 0.0), (3.0, 0.0, 0.0)),
+    "rolls 5 deg": ((0.0, 0.0, 0.0), (0.0, 0.0, 5.0)),
+    "sags 5 mm": ((0.0, -0.005, 0.0), (0.0, 0.0, 0.0)),
+    "sags 15 mm": ((0.0, -0.015, 0.0), (0.0, 0.0, 0.0)),
+    "sags 30 mm": ((0.0, -0.030, 0.0), (0.0, 0.0, 0.0)),
+    "slides 15 mm sideways": ((0.015, 0.0, 0.0), (0.0, 0.0, 0.0)),
+    "sags 15 mm, tips 3 deg": ((0.0, -0.015, 0.0), (0.0, 3.0, 0.0)),
+}
+
+
+def drifted(mount: CameraMount, translation, angles) -> CameraMount:
+    """``mount`` moved by ``translation`` and turned by ``angles`` (degrees)."""
+    from .mathutil import axis_angle, rot_y
+
+    pos = np.asarray(mount.position, float) + np.asarray(translation, float)
+    yaw, pitch, roll = (math.radians(a) for a in angles)
+    d = np.asarray(mount.target, float) - np.asarray(mount.position, float)
+    # The camera's own frame: turn about world up for yaw, about its own
+    # horizontal axis for pitch.
+    side = normalize(np.cross(d, [0.0, 1.0, 0.0]))
+    d = axis_angle(side, -pitch) @ d
+    d = rot_y(-yaw) @ d
+    return dataclasses.replace(
+        mount,
+        position=tuple(pos),
+        target=tuple(pos + d),
+        roll_deg=mount.roll_deg + math.degrees(roll),
+    )
+
+
+def drift_study(
+    drifts: dict | None = None,
+    mount: CameraMount | None = None,
+    scenario: str = "shift",
+    duration: float = 60.0,
+    seed: int = 0,
+) -> list[dict]:
+    """Calibrate with the camera where it was set up, then monitor with it moved.
+
+    Uses perfect landmarks, so the only thing that changes between rows is
+    the camera. Answers: how far may the mount move before the operator has
+    to recalibrate?
+    """
+    from .evaluate import Run, score, simulate_truth
+
+    mount = mount or CameraMount()
+    drifts = drifts or DRIFTS
+
+    def run_with(m):
+        return simulate_truth(
+            scenario, duration=duration, seed=seed, scene=Scene(mount=m)
+        )
+
+    base = run_with(mount)
+    calib = np.array([tr["activity"] == "calibrate" for tr in base.truth])
+    rows = []
+    for name, (t, a) in drifts.items():
+        moved = run_with(drifted(mount, t, a))
+        lm = np.where(
+            calib[:, None, None], base.truth_landmarks_px, moved.truth_landmarks_px
+        )
+        run = Run(
+            meta=base.meta,
+            truth=[
+                b if c else m
+                for b, m, c in zip(base.truth, moved.truth, calib, strict=True)
+            ],
+            mp_landmarks=base.mp_landmarks,
+            truth_landmarks_px=lm,
+            depth_windows=base.depth_windows,
+            depth_origins=base.depth_origins,
+        )
+        rep = score(run, landmarks="truth", ideal=False)
+        g = rep.get("gaze_error") or {}
+        ev = (rep.get("events") or {}).get("warning", {})
+        rows.append(
+            {
+                "drift": name,
+                "gaze_median_deg": g.get("median_deg"),
+                "bias_deg": g.get("bias_deg"),
+                "in_zone": (rep.get("in_zone") or {}).get("accuracy"),
+                "false_out": (rep.get("in_zone") or {}).get("false_out"),
+                "false_warn_per_min": ev.get("false_per_min"),
+                "missed_warnings": ev.get("missed"),
+            }
+        )
+    return rows

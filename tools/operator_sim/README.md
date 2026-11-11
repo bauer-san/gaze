@@ -99,7 +99,8 @@ X,Y,Z` (and `--aim`) moves it for any command that renders, and
 
 `python -m tools.operator_sim placement` scores a grid of candidate mounts
 from ground truth, without rendering, in under a minute. Each candidate is
-aimed at the operator's median eye position while they watch the cut. It is
+aimed at the operator's median eye position while they watch the cut (the
+aim barely matters: see the drift study below). It is
 scored on:
 
 * how head-on it sees the face
@@ -165,7 +166,58 @@ The recommended mount, in the drawing's terms:
 | Camera centre height | 53.7 in (1.365 m) from the floor; body bottom 0.4 in above the housing's underside |
 | Side to side | At the housing's left edge: about 2 in to the operator's left of the blade |
 | Front to back | About 2.75 in in front of the housing's front face |
-| Aim | Up about 24°, and about 4° to the right, at the operator's eyes |
+| Aim | Up about 21°, and about 4° to the right, at the bridge of the operator's nose |
+
+Aim at the nose rather than the eyes: that centres the whole face, which
+FaceMesh needs, and leaves about ±9° above and below, and ±20° either side,
+for the operator to move and the mount to settle.
+
+### Mounting it with the articulated suction arm
+
+The demonstration mount is a 4.5 in (114 mm) pump suction cup with a
+dual-ball-head arm. The D435i's 1/4-20 thread goes on the arm's 1/4 in
+mount, and at 72 g the camera is far inside the mount's rating.
+
+* **Cup:** on the housing's flat stainless front face, its centre about
+  3 in in from the left edge and 3 in up from the underside. That keeps the
+  cup's 2¼ in radius on flat metal, clear of the lower-left chamfer and the
+  edge. The cup goes on clean, dry, degreased metal; the pump's indicator
+  shows when it is losing vacuum.
+* **Arm:** reaches about 3 in left, 2 in down and 3 in out from the cup to
+  put the camera at the recommended position. That is well within the arm's
+  reach.
+* **Check it is clear:** with the arm locked, lower the blade guide all the
+  way and slide the tallest product the saw takes under the housing. The
+  camera must stay clear of both.
+* **Tether it.** A suction cup on a vibrating machine, above an open blade
+  and food product, should not be the only thing holding the camera. Run a
+  short lanyard from the camera or arm to a fixed point on the housing. Check
+  the vacuum indicator at each start-up, and after a washdown, which a cup
+  will not survive reliably.
+
+**How much the mount may move after calibration**, from
+`python -m tools.operator_sim drift`, with perfect landmarks so that only the
+camera changes:
+
+| Mount moves after calibration by | Gaze error, median | In-zone agreement | False warnings/min |
+| --- | --- | --- | --- |
+| nothing | 6.66° | 90.3% | 0.63 |
+| tips down 3° | 6.65° | 90.2% | 0.63 |
+| turns 3° | 6.60° | 90.4% | 0.63 |
+| rolls 5° | 6.66° | 90.3% | 0.63 |
+| sags 15 mm | 6.68° | 90.4% | 0.63 |
+| sags 30 mm | 6.51° | 89.1% | 1.26 |
+| slides 15 mm sideways | 6.59° | 90.4% | 0.63 |
+
+Turning the camera changes nothing measurable. The gaze measurement is the
+iris's position relative to the eye corners, and turning the camera moves
+both together. Moving the camera changes the viewpoint, but at half a metre
+a few centimetres barely registers: a 30 mm sag shifts the vertical reading
+by about 0.16°. So a ball head that creeps does not quietly invalidate the
+calibration. What does limit it is the frame: once the mount has tipped
+about 9°, the operator's chin or forehead leaves the picture, and FaceMesh
+loses the face. Recalibrate after anyone re-aims the arm. A small droop
+does not need it.
 
 The **attention zone** runs from the bottom of the upper blade guide down the
 blade to the table, and across the strip of table in front of the teeth:

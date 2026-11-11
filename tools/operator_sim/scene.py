@@ -46,6 +46,11 @@ GUIDE_BOTTOM_Y = 1.09
 # Median position of the default operator's eyes while watching the cut:
 # what a camera bracket is aimed at when it is set up.
 OPERATOR_EYES = (-0.018, 1.578, 0.60)
+# Where the camera is aimed: the bridge of the nose, a little below the eyes,
+# which centres the whole face in the frame rather than the eyes. FaceMesh
+# needs the chin and forehead too, and this leaves about the same margin
+# above and below for the operator to move, and for the mount to tip.
+OPERATOR_FACE = (-0.018, 1.545, 0.60)
 POST_X = 0.012
 POST_Z = -0.108
 BLADE_TEETH_Z = 0.010
@@ -129,7 +134,8 @@ class CameraMount:
       (about 0.5 m from the eyes) without putting it in front of the blade
       guide, where it would sit in the operator's line of sight to the top
       of a raised guide;
-    * tilted up about 24 degrees, aimed at the operator's eyes.
+    * tilted up about 20 degrees, aimed at the bridge of the operator's nose
+      so the whole face is centred in the frame.
 
     Every option above the housing's underside looks *down* onto the upper
     eyelid, because the operator's line of sight to the cut runs well below
@@ -137,12 +143,14 @@ class CameraMount:
     """
 
     position: tuple = (-0.05, HEAD_BOTTOM_Y + 0.025, 0.13)
-    target: tuple = OPERATOR_EYES
+    target: tuple = OPERATOR_FACE
     width: int = 1280
     height: int = 720
     # D435i colour sensor at 1280x720.
     hfov_deg: float = 70.4
     vfov_deg: float = 43.3
+    # Rotation of the camera about its own optical axis, degrees.
+    roll_deg: float = 0.0
 
 
 @dataclass
@@ -338,9 +346,12 @@ class Scene:
 
 def camera_rotation(mount: CameraMount) -> np.ndarray:
     """World-to-camera rotation (OpenCV axes) for a mount."""
-    from .mathutil import look_at
+    from .mathutil import look_at, rot_z
 
-    return look_at(np.asarray(mount.position, float), np.asarray(mount.target, float))
+    R = look_at(np.asarray(mount.position, float), np.asarray(mount.target, float))
+    if mount.roll_deg:
+        R = rot_z(np.radians(mount.roll_deg)) @ R
+    return R
 
 
 def angular_size_deg(zone: Zone, eye: np.ndarray) -> tuple[float, float]:
