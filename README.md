@@ -122,6 +122,24 @@ signal only when the signal barely moves between samples:
 | fixation | Sit still, head level, stare at one fixed point | The noise floor, and a `max_eye_disparity` to use |
 | roll | Keep staring at that point, tilt your head slowly left and right | Whether head posture is leaking into the reading |
 
+### Simulating it
+
+[`tools/operator_sim`](tools/operator_sim/README.md) is a rendered operator
+at the saw, seen by a simulated D435i on the saw head. The operator has
+eyes that move independently of the head, eyelids that blink and follow
+gaze, and realistic eye–head coordination. Every frame comes with ground
+truth: the true line of sight, eye-in-head rotation, head pose and landmark
+positions. It replays the real pipeline on the frames and scores alarms,
+latency and gaze error against an oracle. It also separates FaceMesh's error
+from the gaze model's, and sweeps the tuning parameters on identical
+frames.
+
+```
+python -m tools.operator_sim generate --scenario shift --out runs/shift
+python -m tools.operator_sim evaluate runs/shift
+python -m tools.operator_sim sweep runs/shift --grid filter_alpha=0.08,0.12,0.2
+```
+
 ## Why a depth camera
 
 Gaze is measured as the iris's displacement within the eye — an angle, not a
