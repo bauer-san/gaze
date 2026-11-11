@@ -73,8 +73,14 @@ class Renderer:
         sensor: SensorModel | None = None,
         ssaa: int = 2,
         static: bool = True,
+        static_ssaa: int = 1,
     ):
         self.scene = scene
+        # Supersampling of the room and the saw. Costs nothing per frame,
+        # since they are rendered once; worth it for presentation renders,
+        # where stair-stepped stainless edges are the first thing you see.
+        self.static_ssaa = max(1, int(static_ssaa))
+        self._floor = None
         self.sensor = sensor or SensorModel()
         self.ssaa = max(1, int(ssaa))
         mount = scene.mount
@@ -156,37 +162,71 @@ class Renderer:
         from .face import Appearance
 
         self.appearance = Appearance()
-        g = self._gbuffer(
-            self.scene.static_meshes(), self.fx, self.fy, self.cx, self.cy,
-            self.width, self.height, cull=False,
-        )  # fmt: skip
-        col = np.zeros((self.width * self.height, 3))
-        col[g.pixel] = self._shade(g, self.fx, self.fy, self.cx, self.cy)
-        depth = np.full(self.width * self.height, np.inf)
+        s = self.static_ssaa
+        W, H = self.width * s, self.height * s
+        fx, fy, cx, cy = self.fx * s, self.fy * s, self.cx * s, self.cy * s
+        g = self._gbuffer(self.scene.static_meshes(), fx, fy, cx, cy, W, H, cull=False)
+        col = np.zeros((W * H, 3))
+        col[g.pixel] = self._shade(g, fx, fy, cx, cy)
+        depth = np.full(W * H, np.inf)
         depth[g.pixel] = g.depth
-        return col.reshape(self.height, self.width, 3), depth.reshape(
-            self.height, self.width
-        )
+        # Where the floor is, in the world, for contact shadows.
+        fxz = np.full((W * H, 2), np.nan)
+        floor = g.material == M.FLOOR
+        fxz[g.pixel[floor]] = g.attrs[floor][:, [0, 2]]
+        col = col.reshape(H, W, 3)
+        depth = depth.reshape(H, W)
+        fxz = fxz.reshape(H, W, 2)
+        if s > 1:
+            h, w = self.height, self.width
+            col = col.reshape(h, s, w, s, 3).mean(axis=(1, 3))
+            depth = depth.reshape(h, s, w, s).min(axis=(1, 3))
+            fxz = fxz[s // 2 :: s, s // 2 :: s]
+        ok = np.isfinite(fxz[..., 0])
+        self._floor = (np.nonzero(ok.ravel())[0], fxz[ok])
+        return col, depth
+
+    def contact_shadows(self, colour: np.ndarray, blobs) -> None:
+        """Darken the floor under ``blobs``: (x, z, radius, strength) each.
+
+        There are no cast shadows in this renderer, and without at least a
+        soft contact shadow anything standing on the floor looks pasted on.
+        """
+        if not blobs or self._floor is None:
+            return
+        idx, xz = self._floor
+        f = np.ones(len(idx))
+        for x, z, r, k in blobs:
+            d2 = (xz[:, 0] - x) ** 2 + (xz[:, 1] - z) ** 2
+            f *= 1.0 - k * np.exp(-d2 / (r * r))
+        flat = colour.reshape(-1, 3)
+        flat[idx] *= f[:, None]
 
     # -- frames ----------------------------------------------------------------
 
-    def render(self, posed: PosedOperator, appearance, face_texture) -> RenderResult:
+    def render(
+        self, posed: PosedOperator, appearance, face_texture, shadows=None
+    ) -> RenderResult:
         self.appearance = appearance
         self.face_texture = face_texture
         W, H = self.width, self.height
         colour = self._static_colour.copy()
         depth = self._static_depth.copy()
+        self.contact_shadows(colour, shadows)
 
         # Body at native resolution.
-        g = self._gbuffer(posed.body_meshes, self.fx, self.fy, self.cx, self.cy, W, H)
-        flat_c = colour.reshape(-1, 3)
-        flat_d = depth.reshape(-1)
-        nearer = g.depth < flat_d[g.pixel]
-        if nearer.any():
-            pix = g.pixel[nearer]
-            sub = _subset(g, nearer)
-            flat_c[pix] = self._shade(sub, self.fx, self.fy, self.cx, self.cy)
-            flat_d[pix] = sub.depth
+        if posed.body_meshes:
+            g = self._gbuffer(
+                posed.body_meshes, self.fx, self.fy, self.cx, self.cy, W, H
+            )
+            flat_c = colour.reshape(-1, 3)
+            flat_d = depth.reshape(-1)
+            nearer = g.depth < flat_d[g.pixel]
+            if nearer.any():
+                pix = g.pixel[nearer]
+                sub = _subset(g, nearer)
+                flat_c[pix] = self._shade(sub, self.fx, self.fy, self.cx, self.cy)
+                flat_d[pix] = sub.depth
 
         # Head, supersampled inside its bounding box.
         verts = np.concatenate([m.vertices for m in posed.head_meshes])

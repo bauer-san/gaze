@@ -80,36 +80,86 @@ class Operator:
         )
 
     def _body(self, s: State) -> list[Mesh]:
+        """Torso, apron, arms, legs and boots, posed for one instant."""
+        from .mathutil import rot_y, rotation_between
+
         a = self.appearance
         st = a.stature / 1.75
         T = s.torso_R
+        up = T @ _x90()
         meshes = []
-        chest_c = s.hips + T @ np.array([0.0, 0.30 * a.stature * 0.58, 0.0])
-        torso = uv_sphere(
-            radii=(0.175 * st, 0.115 * st, 0.30 * st),
-            rings=12,
-            segments=20,
-            material=M.COAT,
+        add = meshes.append
+
+        # Torso: abdomen and chest, in the white coat.
+        spine = s.neck_base - s.hips
+        add(
+            _place(
+                uv_sphere(
+                    radii=(0.165 * st, 0.115 * st, 0.20 * st),
+                    rings=10,
+                    segments=18,
+                    material=M.COAT,
+                ),
+                up,
+                s.hips + spine * 0.38,
+            )
         )
-        meshes.append(_place(torso, T @ _x90(), chest_c))
-        shoulders = uv_sphere(
-            radii=(0.205 * st, 0.11 * st, 0.075 * st),
-            rings=8,
-            segments=18,
-            material=M.COAT,
+        add(
+            _place(
+                uv_sphere(
+                    radii=(0.18 * st, 0.12 * st, 0.21 * st),
+                    rings=10,
+                    segments=20,
+                    material=M.COAT,
+                ),
+                up,
+                s.hips + spine * 0.70,
+            )
         )
-        meshes.append(
-            _place(shoulders, T @ _x90(), s.neck_base - T @ np.array([0.0, 0.03, 0.0]))
+        add(
+            _place(
+                uv_sphere(
+                    radii=(0.205 * st, 0.11 * st, 0.075 * st),
+                    rings=8,
+                    segments=18,
+                    material=M.COAT,
+                ),
+                up,
+                s.neck_base - T @ np.array([0.0, 0.03, 0.0]),
+            )
         )
-        # Apron over the front of the torso. The operator faces -z, so the
-        # front of the body is along the torso's -z.
-        apron = uv_sphere(
-            radii=(0.17 * st, 0.03, 0.27 * st), rings=10, segments=16, material=M.APRON
+        # Pelvis, in work trousers.
+        pelvis = s.hips + np.array([0.0, -0.04, 0.0])
+        add(
+            _place(
+                uv_sphere(
+                    radii=(0.16 * st, 0.12 * st, 0.11 * st),
+                    rings=8,
+                    segments=16,
+                    material=M.TROUSERS,
+                ),
+                up,
+                pelvis,
+            )
         )
-        meshes.append(
-            _place(apron, T @ _x90(), chest_c + T @ np.array([0.0, -0.06, -0.10 * st]))
+        # Long apron from the chest to below the knee, over the front.
+        front = T @ np.array([0.0, 0.0, -1.0])
+        apron_c = (
+            s.hips + spine * 0.22 + front * 0.045 * st + np.array([0.0, -0.10, 0.0])
         )
-        meshes.append(
+        add(
+            _place(
+                uv_sphere(
+                    radii=(0.185 * st, 0.115 * st, 0.47 * st),
+                    rings=12,
+                    segments=18,
+                    material=M.APRON,
+                ),
+                up,
+                apron_c,
+            )
+        )
+        add(
             tube(
                 s.neck_base,
                 s.head_pivot + np.array([0.0, 0.03, 0.0]),
@@ -120,6 +170,67 @@ class Operator:
                 material=M.SKIN_PLAIN,
             )
         )
+
+        # Legs: hip to knee to ankle, feet planted where the operator stands.
+        yaw = rot_y(0.3 * math.atan2(T[0, 2], T[2, 2]))
+        foot_fwd = yaw @ np.array([0.0, 0.0, -1.0])
+        for side in (-1.0, 1.0):
+            hip = pelvis + T @ np.array([side * 0.09 * st, -0.03, 0.0])
+            ankle = np.array([s.stance[0] + side * 0.12 * st, 0.09, s.stance[1] + 0.02])
+            knee = _elbow(
+                hip,
+                ankle,
+                0.43 * st,
+                0.43 * st,
+                foot_fwd + np.array([side * 0.15, 0.0, 0.0]),
+            )
+            add(
+                tube(
+                    hip,
+                    knee,
+                    0.075 * st,
+                    0.058 * st,
+                    segments=12,
+                    rings=2,
+                    material=M.TROUSERS,
+                )
+            )
+            shin = normalize(knee - ankle)
+            add(
+                tube(
+                    knee,
+                    ankle + shin * 0.28,
+                    0.056 * st,
+                    0.05 * st,
+                    segments=12,
+                    rings=2,
+                    material=M.TROUSERS,
+                )
+            )
+            # White rubber boots: a shaft to mid-calf and the foot.
+            add(
+                tube(
+                    ankle - np.array([0.0, 0.03, 0.0]),
+                    ankle + shin * 0.30,
+                    0.062 * st,
+                    0.064 * st,
+                    segments=14,
+                    rings=2,
+                    material=M.BOOT,
+                )
+            )
+            foot = uv_sphere(
+                radii=(0.052, 0.048, 0.135), rings=6, segments=12, material=M.BOOT
+            )
+            add(
+                _place(
+                    foot,
+                    rotation_between(np.array([0, 0, 1.0]), foot_fwd),
+                    np.array([ankle[0], 0.05, ankle[2]]) + foot_fwd * 0.06,
+                )
+            )
+
+        # Arms, in coat sleeves, with work gloves.
         for side, hand in zip((-1.0, 1.0), s.hands, strict=True):
             shoulder = s.neck_base + T @ np.array([side * 0.19 * st, -0.05, 0.0])
             elbow = _elbow(
@@ -129,25 +240,32 @@ class Operator:
                 FOREARM * st,
                 np.array([side * 0.6, -1.0, 0.25]),
             )
-            meshes.append(
+            add(
                 tube(
-                    shoulder, elbow, 0.048, 0.042, segments=12, rings=2, material=M.COAT
+                    shoulder, elbow, 0.05, 0.044, segments=12, rings=2, material=M.COAT
                 )
             )
-            meshes.append(
-                tube(elbow, hand, 0.040, 0.032, segments=12, rings=2, material=M.COAT)
-            )
+            add(tube(elbow, hand, 0.042, 0.036, segments=12, rings=2, material=M.COAT))
             fwd = normalize(hand - elbow)
-            palm = uv_sphere(
-                radii=(0.045, 0.022, 0.08), rings=6, segments=10, material=M.APRON
+            add(
+                tube(
+                    hand - fwd * 0.03,
+                    hand + fwd * 0.02,
+                    0.036,
+                    0.034,
+                    segments=10,
+                    rings=1,
+                    material=M.GLOVE,
+                )
             )
-            from .mathutil import rotation_between
-
-            meshes.append(
+            palm = uv_sphere(
+                radii=(0.045, 0.024, 0.085), rings=6, segments=10, material=M.GLOVE
+            )
+            add(
                 _place(
                     palm,
                     rotation_between(np.array([0, 0, 1.0]), fwd),
-                    hand + fwd * 0.07,
+                    hand + fwd * 0.075,
                 )
             )
         return meshes

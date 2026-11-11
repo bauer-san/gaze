@@ -147,6 +147,20 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--seed", type=int, default=0)
     dr.add_argument("--camera", type=_xyz, metavar="X,Y,Z", help="where it was set up")
 
+    pr = sub.add_parser("promo", help="render the promotional video")
+    pr.add_argument(
+        "--out",
+        type=pathlib.Path,
+        default=pathlib.Path("docs/media/operator-promo.mp4"),
+    )
+    pr.add_argument("--seed", type=int, default=3)
+    pr.add_argument("--workers", type=int, default=0)
+    pr.add_argument(
+        "--keep",
+        type=pathlib.Path,
+        help="keep intermediate renders here (and reuse them)",
+    )
+
     lv = sub.add_parser("live", help="run the real monitor (demo.py) on a recorded run")
     lv.add_argument("run", type=pathlib.Path, help="a run generated with --save-frames")
     lv.add_argument(
@@ -228,6 +242,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "placement":
         return _placement(args)
+
+    if args.command == "promo":
+        from .promo import render_promo
+
+        paths = render_promo(
+            args.out, seed=args.seed, workers=args.workers, keep=args.keep
+        )
+        for k, v in paths.items():
+            print(
+                f"{k}: {v} ({v.stat().st_size / 1e6:.2f} MB)"
+                if v.exists()
+                else f"{k}: -"
+            )
+        return 0
 
     if args.command == "drift":
         import dataclasses

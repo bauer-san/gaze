@@ -228,3 +228,51 @@ def loft(
     flip = np.einsum("ij,ij->i", fn, (v0 + v1 + v2) / 3 - centre) < 0
     faces[flip] = faces[flip][:, [0, 2, 1]]
     return Mesh(verts, faces, material=material, attrs=verts.copy())
+
+
+def prism(profile, x0: float, x1: float, material: int = 0) -> Mesh:
+    """A closed polygon in the (z, y) plane, extruded along x from x0 to x1.
+
+    ``profile`` is counter-clockwise seen from +x. Used for the upper wheel
+    housing, whose peaked top is the one shape a box cannot make. Caps are
+    fanned from the first vertex, so the profile must be convex.
+    """
+    p = np.asarray(profile, float)
+    n = len(p)
+    centre = p.mean(axis=0)  # (z, y)
+    verts, faces, normals = [], [], []
+
+    def add_quad(a, b, c, d, nrm):
+        base = len(verts)
+        verts.extend([a, b, c, d])
+        normals.extend([nrm] * 4)
+        faces.extend([(base, base + 1, base + 2), (base, base + 2, base + 3)])
+
+    for i in range(n):
+        z0, y0 = p[i]
+        z1, y1 = p[(i + 1) % n]
+        a = (x0, y0, z0)
+        b = (x0, y1, z1)
+        c = (x1, y1, z1)
+        d = (x1, y0, z0)
+        # Outward: perpendicular to the edge, away from the profile's centre.
+        nrm = normalize(np.array([0.0, z1 - z0, -(y1 - y0)]))
+        mid = np.array([0.0, (y0 + y1) / 2 - centre[1], (z0 + z1) / 2 - centre[0]])
+        if nrm @ mid < 0:
+            nrm = -nrm
+        add_quad(a, b, c, d, nrm)
+    for x, sign in ((x0, -1.0), (x1, 1.0)):
+        base = len(verts)
+        for z, y in p:
+            verts.append((x, y, z))
+            normals.append((sign, 0.0, 0.0))
+        for i in range(1, n - 1):
+            faces.append((base, base + i, base + i + 1))
+    verts = np.asarray(verts)
+    faces = np.asarray(faces, dtype=np.int64)
+    normals = np.asarray(normals)
+    v0, v1, v2 = (verts[faces[:, i]] for i in range(3))
+    fn = np.cross(v1 - v0, v2 - v0)
+    flip = np.einsum("ij,ij->i", fn, normals[faces[:, 0]]) < 0
+    faces[flip] = faces[flip][:, [0, 2, 1]]
+    return Mesh(verts, faces, material=material, attrs=verts.copy(), normals=normals)

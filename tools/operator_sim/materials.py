@@ -32,6 +32,9 @@ DARK = 15
 MEAT = 16
 LAMP = 17
 PANEL = 18
+TROUSERS = 19
+BOOT = 20
+GLOVE = 21
 
 # Rounded human-eye constants, duplicated from face.py to avoid a cycle.
 _EYEBALL_R = 0.012
@@ -176,6 +179,21 @@ def shade(gbuf, lights: dict, ctx: dict) -> np.ndarray:
     albedo[m] = linear_colour(app.apron)
     spec_k[m] = 0.25
     spec_exp[m] = 30
+    m = mat == TROUSERS
+    if m.any():
+        albedo[m] = (
+            np.array([0.10, 0.12, 0.17])
+            * (0.9 + 0.1 * _hash_noise(attrs[m, :3], 700.0))[:, None]
+        )
+        wrap[m] = 0.2
+    m = mat == BOOT
+    albedo[m] = np.array([0.80, 0.80, 0.78])
+    spec_k[m] = 0.35
+    spec_exp[m] = 25
+    m = mat == GLOVE
+    albedo[m] = np.array([0.30, 0.45, 0.70])
+    spec_k[m] = 0.15
+    wrap[m] = 0.2
 
     m = mat == METAL
     if m.any():
@@ -214,8 +232,20 @@ def shade(gbuf, lights: dict, ctx: dict) -> np.ndarray:
     spec_k[m] = 0.3
     m = mat == MEAT
     if m.any():
-        fat = _hash_noise(attrs[m, :3], 70.0) > 0.82
-        albedo[m] = np.where(fat[:, None], [0.85, 0.75, 0.65], [0.55, 0.10, 0.09])
+        q = attrs[m, :3]
+        # Irregular fat marbling: a warped, thresholded pattern rather than
+        # stripes.
+        # (Primitives carry unit-sphere coordinates, so these frequencies
+        # give a few veins across a cut of meat.)
+        w = np.sin(q[:, 2] * 5.3 + 1.3) + np.sin(q[:, 1] * 6.1 + q[:, 0] * 3.7)
+        vein = np.abs(np.sin(q[:, 0] * 4.0 + q[:, 1] * 2.0 + 1.6 * w))
+        fat = (1 - _smooth(0.0, 0.16, vein)) * 0.8
+        lean = (
+            np.array([0.36, 0.06, 0.05]) * (0.9 + 0.1 * _hash_noise(q, 25.0))[:, None]
+        )
+        albedo[m] = (
+            lean * (1 - fat[:, None]) + np.array([0.80, 0.70, 0.62]) * fat[:, None]
+        )
         spec_k[m] = 0.35
         spec_exp[m] = 40
     m = mat == LAMP

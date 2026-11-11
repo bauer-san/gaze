@@ -282,6 +282,7 @@ def drift_study(
     scenario: str = "shift",
     duration: float = 60.0,
     seed: int = 0,
+    calibration_head: str = "still",
 ) -> list[dict]:
     """Calibrate with the camera where it was set up, then monitor with it moved.
 
@@ -296,7 +297,11 @@ def drift_study(
 
     def run_with(m):
         return simulate_truth(
-            scenario, duration=duration, seed=seed, scene=Scene(mount=m)
+            scenario,
+            duration=duration,
+            seed=seed,
+            scene=Scene(mount=m),
+            calibration_head=calibration_head,
         )
 
     base = run_with(mount)

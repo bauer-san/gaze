@@ -30,7 +30,7 @@ import numpy as np
 
 from . import materials as M
 from .mathutil import normalize
-from .meshes import box, quad, tube, uv_sphere
+from .meshes import box, prism, quad, tube, uv_sphere
 
 TABLE_Y = 0.915
 HEAD_BOTTOM_Y = 1.34
@@ -45,12 +45,12 @@ HEAD_BACK_Z = -0.087
 GUIDE_BOTTOM_Y = 1.09
 # Median position of the default operator's eyes while watching the cut:
 # what a camera bracket is aimed at when it is set up.
-OPERATOR_EYES = (-0.018, 1.578, 0.60)
+OPERATOR_EYES = (-0.023, 1.572, 0.425)
 # Where the camera is aimed: the bridge of the nose, a little below the eyes,
 # which centres the whole face in the frame rather than the eyes. FaceMesh
 # needs the chin and forehead too, and this leaves about the same margin
 # above and below for the operator to move, and for the mount to tip.
-OPERATOR_FACE = (-0.018, 1.545, 0.60)
+OPERATOR_FACE = (-0.023, 1.545, 0.425)
 POST_X = 0.012
 POST_Z = -0.108
 BLADE_TEETH_Z = 0.010
@@ -126,15 +126,17 @@ class CameraMount:
 
     * at the housing's left edge, 50 mm to the operator's left of the blade,
       nearly in line with the operator's face, so it sees the face within
-      about 10 degrees of head-on while they watch the cut;
+      about 14 degrees of head-on while they watch the cut, within a couple
+      of degrees of the best position side to side;
     * with its centre 25 mm above the housing's underside (53.7 in from the
       floor), so the camera body stays clear of the product, which passes
       beneath the housing at up to the saw's maximum cut height;
-    * 70 mm proud of the housing's front face, which brings it closer
-      (about 0.5 m from the eyes) without putting it in front of the blade
-      guide, where it would sit in the operator's line of sight to the top
-      of a raised guide;
-    * tilted up about 20 degrees, aimed at the bridge of the operator's nose
+    * 20 mm proud of the housing's front face. The operator leans over the
+      table with their face only about 0.4 m from here, and at that range
+      the face nearly fills the D435's 42-degree vertical field: further
+      forward is more head-on but leaves too little margin for the chin and
+      forehead to stay in frame as the operator moves;
+    * tilted up about 27 degrees, aimed at the bridge of the operator's nose
       so the whole face is centred in the frame.
 
     Every option above the housing's underside looks *down* onto the upper
@@ -142,7 +144,7 @@ class CameraMount:
     it. That is the main cost of any mount the product clearance allows.
     """
 
-    position: tuple = (-0.05, HEAD_BOTTOM_Y + 0.025, 0.13)
+    position: tuple = (-0.05, HEAD_BOTTOM_Y + 0.025, 0.08)
     target: tuple = OPERATOR_FACE
     width: int = 1280
     height: int = 720
@@ -223,110 +225,10 @@ class Scene:
         for sy in (0.4, 0.9, 1.4):
             add(box((0.8, sy, 3.35), (2.2, sy + 0.03, 3.9), M.METAL))
 
-        # The saw.
-        add(
-            box(
-                (HEAD_LEFT_X, HEAD_BOTTOM_Y, HEAD_BACK_Z),
-                (HEAD_RIGHT_X, HEAD_TOP_Y, HEAD_FRONT_Z),
-                M.METAL,
-                3,
-            )
-        )
-        add(
-            box(
-                (0.32, TABLE_Y, HEAD_BACK_Z),
-                (HEAD_RIGHT_X, HEAD_BOTTOM_Y, 0.04),
-                M.METAL,
-                2,
-            )
-        )
-        add(box((-0.07, 0.15, -0.30), (0.41, TABLE_Y - 0.02, 0.25), M.METAL, 3))
-        for lx in (-0.05, 0.37):
-            for lz in (-0.27, 0.22):
-                add(
-                    tube(
-                        (lx, 0.0, lz),
-                        (lx, 0.16, lz),
-                        0.02,
-                        material=M.METAL,
-                        segments=10,
-                    )
-                )
-        # Fixed table and sliding carriage.
-        add(
-            box(
-                (-0.07, TABLE_Y - 0.02, -0.35),
-                (0.41, TABLE_Y, TABLE_FRONT_Z),
-                M.METAL,
-                3,
-            )
-        )
-        add(
-            box(
-                (-0.56, TABLE_Y, -0.32),
-                (-0.006, TABLE_Y + 0.02, TABLE_FRONT_Z),
-                M.BOARD,
-                3,
-            )
-        )
-        add(
-            box(
-                (-0.56, TABLE_Y - 0.06, TABLE_FRONT_Z - 0.04),
-                (-0.006, TABLE_Y, TABLE_FRONT_Z),
-                M.METAL,
-                2,
-            )
-        )
-        add(
-            tube(
-                (-0.52, TABLE_Y + 0.05, TABLE_FRONT_Z + 0.02),
-                (-0.30, TABLE_Y + 0.05, TABLE_FRONT_Z + 0.02),
-                0.014,
-                material=M.DARK,
-            )
-        )
-        # Blade, upper guide and guide post, fitted to the drawing. The guide
-        # is about 46 mm wide and stands about 20 mm proud of the teeth; the
-        # post runs up behind the housing, about 110 mm behind the teeth, and
-        # carries the guide on an arm with a star knob (here at 47.8 in,
-        # but it moves with the guide).
-        add(
-            box(
-                (-0.0006, TABLE_Y + 0.02, -0.006),
-                (0.0006, HEAD_BOTTOM_Y, BLADE_TEETH_Z),
-                M.BLADE,
-            )
-        )
-        add(box((-0.022, GUIDE_BOTTOM_Y, -0.03), (0.024, HEAD_BOTTOM_Y, 0.03), M.METAL))
-        add(box((-0.012, 1.20, POST_Z - 0.012), (0.03, 1.228, -0.03), M.METAL))
-        add(uv_sphere((-0.03, 1.214, POST_Z), (0.02, 0.012, 0.02), 6, 10, M.DARK))
-        add(
-            tube(
-                (POST_X, 1.15, POST_Z),
-                (POST_X, HEAD_TOP_Y + 0.15, POST_Z),
-                0.011,
-                material=M.METAL,
-                segments=8,
-            )
-        )
-        for by in (1.44, 1.67):  # the two post brackets
-            add(
-                box(
-                    (POST_X - 0.025, by - 0.02, POST_Z - 0.02),
-                    (POST_X + 0.02, by + 0.02, HEAD_BACK_Z),
-                    M.METAL,
-                )
-            )
-        # Product being cut, sitting across the blade line.
-        add(
-            box(
-                (-0.22, TABLE_Y + 0.02, -0.08), (0.004, TABLE_Y + 0.11, 0.12), M.MEAT, 2
-            )
-        )
-        # Controls on the column face.
-        add(box((0.33, 1.06, 0.04), (0.405, 1.18, 0.045), M.PANEL))
-        add(uv_sphere((0.367, 1.14, 0.046), (0.013, 0.013, 0.006), 6, 10, M.WALL))
-        add(uv_sphere((0.367, 1.09, 0.046), (0.013, 0.013, 0.006), 6, 10, M.MEAT))
+        # The saw. Gross dimensions from the drawing; detail after the
+        # Hi-Yield 14's published features (peaked upper housing, swing-open
+        # stainless doors). No markings are reproduced.
+        meshes.extend(saw_meshes())
         # Product tray to the operator's right.
         add(box((0.50, 0.85, 0.05), (1.10, 0.88, 0.65), M.METAL, 2))
         add(box((0.60, 0.88, 0.15), (1.0, 0.95, 0.55), M.APRON, 2))
@@ -342,6 +244,207 @@ class Scene:
                     )
                 )
         return meshes
+
+
+def saw_meshes() -> list:
+    """The band saw itself, in the world frame."""
+    meshes = []
+    add = meshes.append
+    T = TABLE_Y
+
+    # Upper wheel housing, with the peaked top that sheds washdown water.
+    peak_z = (HEAD_FRONT_Z + HEAD_BACK_Z) / 2
+    add(
+        prism(
+            [
+                (HEAD_BACK_Z, HEAD_BOTTOM_Y),
+                (HEAD_FRONT_Z, HEAD_BOTTOM_Y),
+                (HEAD_FRONT_Z, HEAD_TOP_Y - 0.06),
+                (peak_z, HEAD_TOP_Y),
+                (HEAD_BACK_Z, HEAD_TOP_Y - 0.06),
+            ],
+            HEAD_LEFT_X,
+            HEAD_RIGHT_X,
+            M.METAL,
+        )
+    )
+    # Door seam, hinges and latch on the front face.
+    f = HEAD_FRONT_Z
+    for y0, y1, x0, x1 in (
+        (HEAD_BOTTOM_Y + 0.012, HEAD_BOTTOM_Y + 0.016, HEAD_LEFT_X + 0.01, 0.32),
+        (
+            HEAD_TOP_Y - 0.074,
+            HEAD_TOP_Y - 0.07,
+            HEAD_LEFT_X + 0.01,
+            HEAD_RIGHT_X - 0.01,
+        ),
+    ):
+        add(box((x0, y0, f), (x1, y1, f + 0.002), M.DARK))
+    for hy in (1.45, 1.66):
+        add(
+            box(
+                (HEAD_RIGHT_X - 0.004, hy - 0.03, f - 0.03),
+                (HEAD_RIGHT_X + 0.012, hy + 0.03, f),
+                M.METAL,
+            )
+        )
+    add(
+        tube(
+            (HEAD_LEFT_X, 1.63, 0.01),
+            (HEAD_LEFT_X - 0.05, 1.63, 0.01),
+            0.008,
+            material=M.METAL,
+            segments=8,
+        )
+    )
+    add(
+        box((HEAD_LEFT_X - 0.06, 1.60, 0.0), (HEAD_LEFT_X - 0.045, 1.66, 0.02), M.METAL)
+    )
+    # Column carrying the blade's return run, on the operator's right.
+    add(box((0.32, T, HEAD_BACK_Z), (HEAD_RIGHT_X, HEAD_BOTTOM_Y, 0.04), M.METAL, 2))
+    add(box((0.318, T + 0.02, 0.0), (0.322, HEAD_BOTTOM_Y - 0.02, 0.04), M.DARK))
+
+    # Lower cabinet with its door, legs and levelling feet.
+    add(box((-0.045, 0.16, -0.30), (0.40, T - 0.035, 0.24), M.METAL, 3))
+    add(box((0.0, 0.20, 0.24), (0.36, T - 0.08, 0.243), M.METAL))
+    add(box((0.30, 0.48, 0.243), (0.33, 0.58, 0.255), M.DARK))
+    for lx in (-0.025, 0.38):
+        for lz in (-0.28, 0.22):
+            add(
+                box(
+                    (lx - 0.016, 0.03, lz - 0.016),
+                    (lx + 0.016, 0.17, lz + 0.016),
+                    M.METAL,
+                )
+            )
+            add(
+                tube(
+                    (lx, 0.0, lz),
+                    (lx, 0.03, lz),
+                    0.012,
+                    material=M.METAL,
+                    segments=8,
+                    caps=False,
+                )
+            )
+            add(uv_sphere((lx, 0.008, lz), (0.045, 0.045, 0.012), 4, 14, M.DARK))
+
+    # Fixed table to the right of the blade, and its apron.
+    add(box((-0.005, T - 0.02, -0.35), (0.43, T, TABLE_FRONT_Z), M.METAL, 3))
+    add(
+        box(
+            (-0.045, T - 0.08, TABLE_FRONT_Z - 0.03),
+            (0.43, T - 0.02, TABLE_FRONT_Z),
+            M.METAL,
+            2,
+        )
+    )
+
+    # Sliding carriage to the left: a cutting board on a stainless frame,
+    # riding on two round rails, with a hand rail along the front.
+    add(box((-0.56, T, -0.32), (-0.008, T + 0.02, TABLE_FRONT_Z), M.BOARD, 3))
+    add(box((-0.57, T - 0.03, -0.33), (-0.006, T, TABLE_FRONT_Z + 0.01), M.METAL, 2))
+    for rx in (-0.50, -0.07):
+        add(
+            tube(
+                (rx, T - 0.06, -0.42),
+                (rx, T - 0.06, TABLE_FRONT_Z + 0.06),
+                0.014,
+                material=M.METAL,
+                segments=10,
+            )
+        )
+    add(box((-0.53, T - 0.10, -0.40), (-0.04, T - 0.07, -0.37), M.METAL))
+    add(
+        box(
+            (-0.53, T - 0.10, TABLE_FRONT_Z + 0.03),
+            (-0.04, T - 0.07, TABLE_FRONT_Z + 0.06),
+            M.METAL,
+        )
+    )
+    for hx in (-0.53, -0.08):
+        add(
+            tube(
+                (hx, T + 0.02, TABLE_FRONT_Z + 0.01),
+                (hx, T + 0.07, TABLE_FRONT_Z + 0.05),
+                0.009,
+                material=M.METAL,
+                segments=8,
+            )
+        )
+    add(
+        tube(
+            (-0.53, T + 0.07, TABLE_FRONT_Z + 0.05),
+            (-0.08, T + 0.07, TABLE_FRONT_Z + 0.05),
+            0.012,
+            material=M.METAL,
+            segments=10,
+        )
+    )
+    # Pusher plate (end gauge) behind the product, with its lever handle.
+    add(box((-0.30, T + 0.02, 0.16), (-0.03, T + 0.16, 0.175), M.METAL))
+    add(
+        tube(
+            (-0.16, T + 0.12, 0.175),
+            (-0.16, T + 0.15, 0.27),
+            0.009,
+            material=M.METAL,
+            segments=8,
+        )
+    )
+    add(
+        tube(
+            (-0.22, T + 0.15, 0.27),
+            (-0.08, T + 0.15, 0.27),
+            0.013,
+            material=M.DARK,
+            segments=10,
+        )
+    )
+
+    # Blade, upper guide and guide post, fitted to the drawing. The guide
+    # is about 46 mm wide and stands about 20 mm proud of the teeth; the
+    # post runs up behind the housing, about 110 mm behind the teeth, and
+    # carries the guide on an arm with a star knob (here at 47.8 in, but
+    # it moves with the guide).
+    add(
+        box(
+            (-0.0006, T + 0.02, -0.006), (0.0006, HEAD_BOTTOM_Y, BLADE_TEETH_Z), M.BLADE
+        )
+    )
+    add(box((-0.022, GUIDE_BOTTOM_Y, -0.03), (0.024, HEAD_BOTTOM_Y, 0.03), M.METAL))
+    add(box((-0.012, 1.20, POST_Z - 0.012), (0.03, 1.228, -0.03), M.METAL))
+    add(uv_sphere((-0.03, 1.214, POST_Z), (0.02, 0.012, 0.02), 6, 10, M.DARK))
+    add(
+        tube(
+            (POST_X, 1.15, POST_Z),
+            (POST_X, HEAD_TOP_Y + 0.15, POST_Z),
+            0.011,
+            material=M.METAL,
+            segments=8,
+        )
+    )
+    for by in (1.44, 1.67):  # the two post brackets
+        add(
+            box(
+                (POST_X - 0.025, by - 0.02, POST_Z - 0.02),
+                (POST_X + 0.02, by + 0.02, HEAD_BACK_Z),
+                M.METAL,
+            )
+        )
+
+    # Product: a primal being cut across the blade line, and steaks already
+    # cut lying on the fixed table.
+    add(uv_sphere((-0.10, T + 0.065, 0.02), (0.11, 0.10, 0.06), 10, 18, M.MEAT))
+    for sx, sz in ((0.10, 0.05), (0.16, 0.12), (0.22, 0.03)):
+        # Lying flat: thin in y.
+        add(uv_sphere((sx, T + 0.012, sz), (0.06, 0.012, 0.05), 6, 14, M.MEAT))
+
+    # Controls on the column face.
+    add(box((0.33, 1.06, 0.04), (0.405, 1.18, 0.045), M.PANEL))
+    add(uv_sphere((0.367, 1.14, 0.046), (0.013, 0.013, 0.006), 6, 10, M.WALL))
+    add(uv_sphere((0.367, 1.09, 0.046), (0.013, 0.013, 0.006), 6, 10, M.MEAT))
+    return meshes
 
 
 def camera_rotation(mount: CameraMount) -> np.ndarray:

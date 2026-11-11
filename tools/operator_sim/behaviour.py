@@ -62,6 +62,12 @@ HEAD_PIVOT = np.array([0.0, -0.072, -0.035])
 EYE_YAW_LIMIT = math.radians(42.0)
 EYE_UP_LIMIT = math.radians(32.0)
 EYE_DOWN_LIMIT = math.radians(48.0)
+# Where the operator stands, (x, z) of the feet: a little left of the blade,
+# with the front of their body a hand's width behind the carriage's hand
+# rail, leaning over the table to the work. Close in, because that is where
+# the product is: the cut is about 0.35 m beyond the table's front edge.
+STANCE = (-0.04, 0.64)
+
 # Neck rotation range; beyond it the torso has to turn.
 HEAD_YAW_LIMIT = math.radians(75.0)
 
@@ -99,31 +105,34 @@ class Segment:
 class Traits:
     """Individual differences in how an operator moves."""
 
-    # Fraction of a large gaze shift taken up by the head. Some people are
-    # "head movers", others move mostly their eyes.
+    # Head contribution grows linearly with the part of a gaze shift beyond
+    # the threshold: head = head_gain * (shift - threshold). Some people are
+    # "head movers" (high gain, low threshold), others move mostly their eyes.
     head_gain: float = 0.75
     # Gaze shifts smaller than this are made with the eyes alone. Most people
     # make shifts under about 15-20 degrees with the eyes alone; lower it to
     # model a "head mover".
     head_threshold_deg: float = 15.0
-    # However large the shift, the head stops with the eyes at most this far
-    # off-centre in the head.
-    max_eccentricity_deg: float = 10.0
-    # During a held fixation the head drifts round to re-centre the eyes,
-    # once they have been this far off-centre for a moment, taking up
-    # ``recentre_gain`` of the eccentricity. VOR holds gaze meanwhile.
+    # However large the shift, the head goes far enough that the eyes end up
+    # at most this far off-centre in the head.
+    max_eccentricity_deg: float = 20.0
+    # During a held fixation the head carries on round to re-centre the
+    # eyes once they have been more than ``recentre_deg`` off-centre for a
+    # moment, until they are ``recentre_to_deg`` off. VOR holds gaze
+    # meanwhile. After a big turn back to the work, this is the head
+    # catching up with the eyes.
     #
     # This matters more than it looks. An eye-in-head measurement cannot
     # tell a re-centred head from a change of gaze, and an operator who
     # re-centres on each corner during commissioning calibrates a zone that
     # is far too small. Lower recentre_deg to model that operator.
     recentre_deg: float = 15.0
-    recentre_gain: float = 0.5
+    recentre_to_deg: float = 2.0
     # People looking down keep their eyes lowered in the head rather than
     # bowing the head all the way: the comfortable split.
     eye_down_bias_deg: float = 12.0
     blink_rate_per_min: float = 17.0
-    lean_deg: float = 12.0
+    lean_deg: float = 8.0
     sway_m: float = 0.008
     head_jitter_deg: float = 0.6
     roll_bias_deg: float = 3.0
@@ -139,6 +148,7 @@ class State:
     head_pivot: np.ndarray  # world
     neck_base: np.ndarray
     hips: np.ndarray
+    stance: np.ndarray  # (x, z) of the feet, without sway
     torso_R: np.ndarray
     fixation: np.ndarray  # world point both eyes are aimed at
     cyclopean: np.ndarray  # world, midpoint of the eyes
@@ -164,7 +174,7 @@ class Behaviour:
         stature: float = 1.75,
         traits: Traits | None = None,
         seed: int = 0,
-        stance: tuple = (-0.04, 0.84),
+        stance: tuple = STANCE,
     ):
         self.scene = scene
         self.targets = scene.targets()
@@ -235,13 +245,14 @@ class Behaviour:
 
     def _hand_targets(self, mode: str) -> np.ndarray:
         if mode == "tray":
-            return np.array([[-0.16, 0.99, 0.18], [0.70, 0.97, 0.36]])
+            return np.array([[-0.17, 1.03, 0.07], [0.62, 0.97, 0.30]])
         if mode == "rest":
-            return np.array([[-0.25, 0.93, 0.45], [0.18, 0.93, 0.45]])
+            return np.array([[-0.30, 0.99, 0.42], [0.10, 0.99, 0.42]])
         if mode == "carriage":
-            return np.array([[-0.42, 0.97, 0.38], [-0.12, 1.0, 0.22]])
-        # Pushing product through the blade from the left, both hands on it.
-        return np.array([[-0.20, 1.0, 0.10], [-0.07, 1.0, 0.24]])
+            return np.array([[-0.42, 0.99, 0.41], [-0.13, 1.07, 0.27]])
+        # Pushing product through the blade from the left: the left hand
+        # steadies the product, the right drives the pusher plate's handle.
+        return np.array([[-0.17, 1.03, 0.07], [-0.13, 1.07, 0.27]])
 
     @property
     def segment(self) -> Segment:
@@ -318,8 +329,15 @@ class Behaviour:
 
     # -- control -----------------------------------------------------------------
 
-    def _plan_gaze_shift(self, target: np.ndarray, mode: str) -> None:
-        """Start a saccade to ``target`` and, if needed, a head movement."""
+    def _plan_gaze_shift(
+        self, target: np.ndarray, mode: str, scan: bool = False
+    ) -> None:
+        """Start a saccade to ``target`` and, if needed, a head movement.
+
+        ``scan`` marks a small re-fixation within the same target, which
+        does not restart the head's settling: re-centring waits on the last
+        real change of target, not on every glance across the cut.
+        """
         _, _, _, pivot = self._body()
         head_R = self._head_R(self.head)
         cyc = self._eye_world(head_R, pivot).mean(axis=0)
@@ -332,8 +350,9 @@ class Behaviour:
             self.t,
             saccade_duration(amp),
         )
-        self._fixation_start = self.t
-        self._recentre_wait = float(self.rng.uniform(0.5, 1.2))
+        if not scan:
+            self._fixation_start = self.t
+            self._recentre_wait = float(self.rng.uniform(0.5, 1.2))
         self.gaze_target = target
         self.micro_offset[:] = 0.0
 
@@ -366,9 +385,13 @@ class Behaviour:
     ) -> np.ndarray:
         """Where the head goes for a gaze target at (yaw_t, pitch_t).
 
-        Below the threshold the head stays put. Above it, the head takes
-        ``head_gain`` of the shift but never leaves the eyes more than
-        ``max_eccentricity_deg`` off-centre.
+        Below the threshold the head stays put. Above it the head moves by
+        ``head_gain`` times the excess, and always far enough that the eyes
+        end no more than ``max_eccentricity_deg`` off-centre. The linear
+        growth above a threshold is the classic description of head
+        contribution to combined gaze shifts; taking a fixed fraction of the
+        whole shift instead moves the head far too much for the 15-25 degree
+        shifts that commissioning the zone involves.
         """
         tr = self.traits
         new = self.head.copy()
@@ -376,9 +399,10 @@ class Behaviour:
         cap = math.radians(tr.max_eccentricity_deg)
         for k, goal in ((0, yaw_t), (1, pitch_goal)):
             delta = goal - self.head[k]
-            if abs(math.degrees(delta)) > threshold_deg:
-                residual = min(abs(delta) * (1.0 - tr.head_gain), cap)
-                new[k] = goal - math.copysign(residual, delta)
+            excess = abs(delta) - math.radians(threshold_deg)
+            if excess > 0:
+                move = max(tr.head_gain * excess, abs(delta) - cap)
+                new[k] = self.head[k] + math.copysign(move, delta)
         return new
 
     def _maybe_recentre(self, seg: Segment) -> None:
@@ -387,18 +411,24 @@ class Behaviour:
             seg.head != "natural"
             or self.head_plan is not None
             or self.saccade_plan is not None
+            # A new instruction whose gaze shift has not started yet: the
+            # current target is the old one, and re-centring on it now
+            # would turn the head the wrong way.
+            or self.pending is not None
         ):
             return
         if self.t - self._fixation_start < self._recentre_wait:
             return
         yaw_t, pitch_t = self._target_angles(self.gaze_target)
         tr = self.traits
-        goal = self._head_goal(yaw_t, pitch_t, tr.recentre_deg)
-        step = goal - self.head
-        if np.max(np.abs(step[:2])) < math.radians(1.0):
+        new = self.head.copy()
+        pitch_goal = pitch_t - math.radians(tr.eye_down_bias_deg)
+        for k, goal in ((0, yaw_t), (1, pitch_goal)):
+            ecc = goal - self.head[k]
+            if abs(ecc) > math.radians(tr.recentre_deg):
+                new[k] = goal - math.copysign(math.radians(tr.recentre_to_deg), ecc)
+        if np.max(np.abs(new[:2] - self.head[:2])) < math.radians(1.0):
             return
-        # Part of the way, slowly: a re-centring is not a gaze shift.
-        new = self.head + step * tr.recentre_gain
         amp = math.degrees(float(np.max(np.abs(new[:2] - self.head[:2]))))
         self.head_plan = (
             self.head.copy(),
@@ -472,7 +502,7 @@ class Behaviour:
             base = self._resolve(seg.target)
             off = self.rng.normal(0.0, seg.scan, size=3) * np.array([1.0, 0.6, 0.3])
             self._plan_gaze_shift(
-                base + off, "still" if seg.head == "still" else "natural"
+                base + off, "still" if seg.head == "still" else "natural", scan=True
             )
             self.next_scan = self.t + self.rng.uniform(0.25, 0.9)
 
@@ -591,6 +621,7 @@ class Behaviour:
             head_pivot=pivot,
             neck_base=neck_base,
             hips=hips,
+            stance=self.stance.copy(),
             torso_R=torso_R,
             fixation=fix,
             cyclopean=cyc,
@@ -681,7 +712,7 @@ def shift_segments(duration: float, rng: np.random.Generator) -> list[Segment]:
     segs = []
     t = 0.0
     last = None
-    stance = np.array([-0.04, 0.84])
+    stance = np.array(STANCE)
     while t < duration:
         i = int(rng.choice(len(names), p=weights))
         name, _, (lo, hi), tmpl = TASK_MODEL[i]
@@ -693,7 +724,11 @@ def shift_segments(duration: float, rng: np.random.Generator) -> list[Segment]:
         if rng.random() < 0.08:
             # Occasionally shift position at the table: a step back, closer,
             # or sideways along it. Exercises the depth compensation.
-            stance = np.array([-0.04, 0.84]) + rng.normal(0, [0.06, 0.08])
+            # Never closer than the rail allows.
+            stance = np.array(STANCE) + np.abs(rng.normal(0, [0.06, 0.08])) * [
+                rng.choice([-1, 1]),
+                1,
+            ]
             seg = replace(seg, stance=tuple(stance))
         segs.append(seg)
         t += d
@@ -765,7 +800,8 @@ def eyes_only_segments(duration: float, rng: np.random.Generator) -> list[Segmen
 def distance_segments(duration: float) -> list[Segment]:
     """Watch the cut while stepping back and forth from the table."""
     segs = []
-    stances = [(-0.04, 0.84), (-0.04, 1.02), (-0.04, 0.76), (0.05, 0.92), (-0.04, 0.84)]
+    x, z = STANCE
+    stances = [(x, z), (x, z + 0.18), (x, z + 0.03), (x + 0.09, z + 0.08), (x, z)]
     per = duration / len(stances)
     for s in stances:
         segs.append(Segment("cut", per, scan=0.02, stance=s, activity="distance"))

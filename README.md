@@ -15,6 +15,18 @@ looking, and escalates when their gaze leaves that region:
 | `ALERT` | Gaze has been outside it for `alert_after` seconds |
 | `FAULT` | The camera has stopped producing usable frames |
 
+## See it
+
+[![A simulated operator at the saw, with the monitor's view of where they are looking](docs/media/operator-promo.jpg)](docs/media/operator-promo.mp4)
+
+**[Watch the video](docs/media/operator-promo.mp4)** (1080p), or the
+[small version](docs/media/operator-promo-sms.mp4) for sending in a text
+message. It is rendered by the [operator simulator](tools/operator_sim/README.md):
+a simulated operator commissions the monitor and then works at the saw. The
+status badge is not scripted. It is the real pipeline (FaceMesh, the gaze
+measurement, calibration and the state machine) running on the simulated
+face camera's frames.
+
 ## What this is not
 
 **This is an attention aid, not a machine guard.** It has no guaranteed

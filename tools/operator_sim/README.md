@@ -91,7 +91,7 @@ carriage is to the left of the blade. The geometry is in
 
 The camera is a D435i at 1280×720 (70.4° × 43.3°), on the mount the
 placement study below recommends: a short bracket off the front-left corner
-of the upper wheel housing, aimed up at the operator's eyes. `--camera
+of the upper wheel housing, aimed up at the operator's face. `--camera
 X,Y,Z` (and `--aim`) moves it for any command that renders, and
 `CameraMount` in code.
 
@@ -115,49 +115,60 @@ underside is the saw's maximum cut height, and product on the carriage, and
 the pieces coming off the blade, pass beneath it across the whole table. So
 nothing can hang below it there.
 
-The shortlist was then rendered and run through FaceMesh. The table shows
-two 30 s shifts with identical behaviour per row group.
+**Where the operator stands decides the distances.** The operator stands
+close in, with the front of their body a hand's width behind the carriage's
+hand rail, leaning over the table. That is where the product is: the cut is
+about 0.35 m beyond the table's front edge. Their eyes end up about 0.4 m in
+front of the blade and 1.57 m up, roughly 0.65 m from the cut, which is the
+working distance the pipeline was tuned at. (An earlier version of the
+simulator stood the operator about 0.2 m further back. The FaceMesh
+comparisons made then are withdrawn rather than kept with numbers that no
+longer apply.)
 
-| Mount (from the blade, as the operator sees it) | Face off-axis | Gaze error, median | In-zone agreement | False warnings/min |
-| --- | --- | --- | --- | --- |
-| Previous: 100 mm right, 52.2 in, 15 mm in front of the housing | 12.8° | 10.9° / 5.3° | 56% / 91% | 9.2 / 1.7 |
-| **Recommended: 50 mm left, 53.7 in, 70 mm in front of the housing** | ≈9° | 6.7° / 7.8° | 86% / 90% | 1.9 / 1.7 |
-| In line with the blade, 53.7 in, 130 mm in front of the housing | 4.1° | 7.4° / 7.5° | 89% / 84% | 0 / 1.7 |
+Scored from ground truth over a minute of the `shift` scenario:
 
-(seed 0 with the default operator / seed 1 with the `light` operator)
+| Mount (from the blade, as the operator sees it) | Face off-axis | Iris seen at | Camera to eyes | Iris | Eye blocked |
+| --- | --- | --- | --- | --- | --- |
+| Previous: 100 mm right, 52.2 in, 15 mm in front of the housing (hangs into the product envelope) | 13.3° | 25.1° | 0.45 m | 24 px | 0% |
+| **Recommended: 50 mm left, 53.7 in, 20 mm in front of the housing** | 13.7° | 26.6° | 0.41 m | 26 px | 0% |
+| 50 mm left, 53.7 in, 70 mm in front | 11.4° | 23.2° | 0.37 m | 29 px | 0% |
+| In line with the blade, 53.7 in, 70 mm in front | 8.6° | 22.3° | 0.36 m | 29 px | 0% |
+| Guide-post side, 53 in, 110 mm behind the teeth | 20.0° | 33.8° | 0.58 m | 18 px | 40% |
 
-**The rendered runs do not separate the mounts.** In the first pair the
-recommended mount roughly halves the gaze error and the false alarms. In the
-second, the previous position does best. Over 30 s, where each four-corner
-calibration happens to land moves the result more than the mount does. It
-would take many longer runs to resolve a difference this size end to end.
-So the recommendation rests on the geometry, where the differences are
-consistent across every frame, and on the product clearance, which the
-previous position violated: it hung 15 mm *below* the housing's underside.
+Side to side, at the recommended height and depth:
+
+| Camera, from the blade | 150 mm left | 100 mm left | 50 mm left | in line | 50 mm right | 100 mm right | 150 mm right |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Face off-axis | 23.4° | 17.5° | 13.7° | 11.5° | 12.0° | 16.1° | 21.6° |
 
 What decides it:
 
-* **Side to side**, the camera wants to be in line with the operator's face,
-  who stands about 40 mm to the left of the blade. The previous position, on
-  the right of the blade, saw the face 13° off-axis. Moving 150 mm left takes
-  out most of that.
+* **Side to side** is forgiving within about 50 mm either way of the blade.
+  The operator stands about 40 mm left of the blade, with their face turned
+  about 5° to their right, towards the cut, so the best line is roughly
+  in line with the blade. Anywhere within 50 mm of it is within about 2° of
+  the best; past 100 mm the face turns away fast. 50 mm left puts the camera
+  at the housing's left edge, where a bracket or suction arm can reach, and
+  out of the operator's line of sight to the top of a raised blade guide.
+  The *previous* position, 100 mm right, is about as good on angle; what
+  rules it out is that it hung 15 mm below the housing, into the product.
 * **Height** is fixed by the product clearance. The camera's centre is 25 mm
   above the housing's underside, so its body clears the maximum cut height
   by about 10 mm. Every mount allowed there is *above* the operator's line of
-  sight to the cut, by about 20–25°, so it looks down onto the upper eyelid,
-  which follows the eye down. That is the price of the clearance, and the
-  main reason vertical gaze is the weaker axis.
-* **Forward** brings the camera closer: 0.5 m instead of 0.6 m, about 20 px
-  of iris instead of 18, and the face more head-on. But a camera directly in
-  front of the blade guide sits in the operator's line of sight to the top of
-  the guide when it is raised for tall product. 50 mm to the left keeps it
-  beside that line, at little cost. The centred mount scores best on
-  geometry; prefer it only if the guide is never raised high enough for the
-  camera to get in the way.
-* The **guide-post side**, about 110 mm behind the teeth on the operator's
-  left, was considered and rejected. It is further away (0.74 m), sees the
-  face from the side, and the guide and its arm block an eye in about 15% of
-  frames.
+  sight to the cut, by 20–25°, so it looks down onto the upper eyelid, which
+  follows the eye down. That is the price of the clearance, and the main
+  reason vertical gaze is the weaker axis.
+* **Forward** is a trade between angle and **framing**. At 0.36–0.4 m the
+  operator's face nearly fills the D435's 42° vertical field. With the camera
+  70 mm proud of the housing, the chin and forehead come within about 2° of
+  the frame's edges as the operator moves. 20 mm proud buys 5–7° of margin
+  for a couple of degrees of angle, and it keeps the camera out of the
+  operator's line of sight to the top of a raised blade guide. Turning the
+  camera on its side (portrait) would give the face 70° of vertical field;
+  the pipeline would need to rotate the frame back before FaceMesh, which
+  it does not do today.
+* The **guide-post side** is further away, sees the face from the side, and
+  the guide and its arm block an eye in about 30% of frames.
 
 The recommended mount, in the drawing's terms:
 
@@ -165,12 +176,35 @@ The recommended mount, in the drawing's terms:
 | --- | --- |
 | Camera centre height | 53.7 in (1.365 m) from the floor; body bottom 0.4 in above the housing's underside |
 | Side to side | At the housing's left edge: about 2 in to the operator's left of the blade |
-| Front to back | About 2.75 in in front of the housing's front face |
-| Aim | Up about 21°, and about 4° to the right, at the bridge of the operator's nose |
+| Front to back | About 0.8 in in front of the housing's front face |
+| Aim | Up about 27°, and about 4° to the right, at the bridge of the operator's nose |
 
 Aim at the nose rather than the eyes: that centres the whole face, which
-FaceMesh needs, and leaves about ±9° above and below, and ±20° either side,
-for the operator to move and the mount to settle.
+FaceMesh needs.
+
+### Commission with the head still
+
+From where the operator stands, the zone's bottom corners are as much as 27°
+to either side of their eyes. Asked to "look at each corner", most people
+turn their head for shifts that size, and the pipeline measures the eye
+*in the head*: a head turned during commissioning shrinks the calibrated
+zone. With perfect landmarks, so that only this changes:
+
+| Commissioning | Scenario | Gaze error, median | In-zone agreement |
+| --- | --- | --- | --- |
+| Head held still, eyes only | `eyes-only` | 2.7–3.4° | 89–97% |
+| Natural head movement | `eyes-only` | 20° | 57% |
+| Head held still | `shift` | 2.6–4.0° | 97–98% |
+| Natural head movement | `shift` | 12.5° | 59% |
+
+Two seeds each, 40 s. With natural head movement, one of the two seeds
+never calibrated at all: the calibrator rejected the corners as "too much
+movement", because the head was still turning while the operator held the
+fixation. The rows give the seed that did calibrate.
+
+So the instruction at commissioning should be *keep your head still and
+look at each corner with your eyes*. `--calibration-head still` models that
+operator; the default is natural eye–head coordination.
 
 ### Mounting it with the articulated suction arm
 
@@ -183,9 +217,8 @@ mount, and at 72 g the camera is far inside the mount's rating.
   cup's 2¼ in radius on flat metal, clear of the lower-left chamfer and the
   edge. The cup goes on clean, dry, degreased metal; the pump's indicator
   shows when it is losing vacuum.
-* **Arm:** reaches about 3 in left, 2 in down and 3 in out from the cup to
-  put the camera at the recommended position. That is well within the arm's
-  reach.
+* **Arm:** reaches about 3 in left, 2 in down and 1 in out from the cup to
+  put the camera at the recommended position, well within its reach.
 * **Check it is clear:** with the arm locked, lower the blade guide all the
   way and slide the tallest product the saw takes under the housing. The
   camera must stay clear of both.
@@ -196,33 +229,33 @@ mount, and at 72 g the camera is far inside the mount's rating.
   will not survive reliably.
 
 **How much the mount may move after calibration**, from
-`python -m tools.operator_sim drift`, with perfect landmarks so that only the
-camera changes:
+`python -m tools.operator_sim drift`: 90 s of `shift`, commissioned with the
+head still, perfect landmarks so that only the camera changes:
 
 | Mount moves after calibration by | Gaze error, median | In-zone agreement | False warnings/min |
 | --- | --- | --- | --- |
-| nothing | 6.66° | 90.3% | 0.63 |
-| tips down 3° | 6.65° | 90.2% | 0.63 |
-| turns 3° | 6.60° | 90.4% | 0.63 |
-| rolls 5° | 6.66° | 90.3% | 0.63 |
-| sags 15 mm | 6.68° | 90.4% | 0.63 |
-| sags 30 mm | 6.51° | 89.1% | 1.26 |
-| slides 15 mm sideways | 6.59° | 90.4% | 0.63 |
+| nothing | 5.40° | 77.2% | 1.28 |
+| tips down 3° | 5.41° | 77.2% | 1.28 |
+| turns 3° | 5.34° | 77.4% | 1.28 |
+| rolls 5° | 5.40° | 77.2% | 1.28 |
+| sags 15 mm | 5.46° | 81.0% | 0.64 |
+| sags 30 mm | 5.56° | 87.2% | 0.64 |
+| slides 15 mm sideways | 5.35° | 75.3% | 1.28 |
 
 Turning the camera changes nothing measurable. The gaze measurement is the
 iris's position relative to the eye corners, and turning the camera moves
-both together. Moving the camera changes the viewpoint, but at half a metre
-a few centimetres barely registers: a 30 mm sag shifts the vertical reading
-by about 0.16°. So a ball head that creeps does not quietly invalidate the
-calibration. What does limit it is the frame: once the mount has tipped
-about 9°, the operator's chin or forehead leaves the picture, and FaceMesh
-loses the face. Recalibrate after anyone re-aims the arm. A small droop
-does not need it.
+both together. Moving it changes the viewpoint slightly, which moves
+individual frames across the zone's edge, but not the error. So a ball head
+that creeps does not quietly invalidate the calibration. What does limit it
+is the frame: with only 5–7° of margin, a mount that tips further than that
+loses the operator's chin or forehead, and FaceMesh loses the face.
+Recalibrate after anyone re-aims the arm. A small droop does not need it.
 
 The **attention zone** runs from the bottom of the upper blade guide down the
 blade to the table, and across the strip of table in front of the teeth:
-24 cm wide, tilted towards the operator, about 17° × 16° as seen from the
-eyes.
+24 cm wide and tilted towards the operator. Seen from the eyes it is about
+21° × 18° across its middle, and much wider at its near edge, whose corners
+are up to 27° to either side.
 
 The sensor model is deliberately unflattering. The colour image gets optical
 blur, shot and read noise, and 8-bit quantisation. Depth error grows with the
@@ -246,8 +279,8 @@ Every scenario starts with commissioning: the operator fixates the four zone
 corners in order, and the evaluator "presses c" a second into each
 fixation, pressing again if the calibrator rejects one.
 `--calibration-head still` models an operator who keeps their head still
-while calibrating. The default is natural eye–head coordination, which turns
-the head for the diagonal corner-to-corner shifts.
+while calibrating, as they should (see above). The default is natural
+eye–head coordination, which turns the head for the wider shifts.
 
 ## What `evaluate` reports
 
@@ -317,6 +350,37 @@ happens to land some frames back inside the zone.
   commissioning. An operator who turns their head towards each corner
   calibrates a zone that is too small. Head pose is the obvious next input,
   and the simulator's `head_*_deg` truth is there to fit it against.
+
+## The promo video
+
+```bash
+python -m tools.operator_sim promo --out docs/media/operator-promo.mp4
+```
+
+renders [`docs/media/operator-promo.mp4`](../../docs/media/operator-promo.mp4)
+(1080p, 30 s), a copy sized for a text message beside it (`-sms.mp4`, 640×360
+and under 1 MB, which is about the most carriers pass as MMS), and a poster
+frame. It takes about 15 minutes on four cores. `--keep DIR` saves the
+intermediate renders and reuses them, so a change to the captions or
+overlays re-encodes in a minute or two.
+
+The shot is a 3/4 view of the operator at the saw. The camera that does the
+monitoring is not drawn, since in production it is built into the saw head,
+but what it sees is: the inset is its frame, with FaceMesh's landmarks.
+
+**The status badge is not scripted.** The face camera's frames are rendered,
+FaceMesh runs on them, and the package's own measurer, calibrator and state
+machine decide the state, exactly as `evaluate` replays them. The script
+(watch the cut, glance at the tray for half a second, turn to talk to a
+coworker, go back to the cut) is chosen to show the grace period, the
+warning and alert thresholds, and the alarm clearing. The operator
+commissions with their head still, as recommended above. The video is cut
+from one continuous run and is not trimmed: what the pipeline did is what it
+shows.
+
+The saw is drawn from the general-arrangement drawing and the Hi-Yield 14's
+published features (peaked upper housing, stainless doors), with no markings
+or logo.
 
 ## Limitations
 

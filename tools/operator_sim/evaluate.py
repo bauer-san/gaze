@@ -322,6 +322,8 @@ def _segment_dict(seg) -> dict:
 
 
 def _json_default(o):
+    if dataclasses.is_dataclass(o) and not isinstance(o, type):
+        return dataclasses.asdict(o)
     if isinstance(o, np.ndarray):
         return o.tolist()
     if isinstance(o, np.generic):
@@ -514,6 +516,8 @@ def replay(
         "oracle": np.zeros(n, dtype=object),
         "in_zone": np.zeros(n, bool),
         "true_in_zone": np.zeros(n, bool),
+        "away": np.zeros(n),
+        "corners_done": np.zeros(n, int),
     }
     zone = None
     for i, tr in enumerate(run.truth):
@@ -535,6 +539,7 @@ def replay(
         if sample is not None:
             out["z_m"][i] = sample.z_m
 
+        out["corners_done"][i] = calibrator.corner_index
         corner = tr.get("calib_corner")
         if corner is not None and corner != last_corner:
             seg_start = t
@@ -576,6 +581,7 @@ def replay(
         true = _Oracle(u, v) if (math.isfinite(u) and math.isfinite(v)) else None
         ostatus = oracle.update(t, true, camera_ok=True)
         out["state"][i] = status.state.value
+        out["away"][i] = status.away_seconds
         out["oracle"][i] = ostatus.state.value
         out["in_zone"][i] = status.in_zone
         out["true_in_zone"][i] = ostatus.in_zone
