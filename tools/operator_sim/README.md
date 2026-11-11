@@ -155,7 +155,21 @@ alone.
 
 ## What it has shown so far
 
-These are from short runs. Treat them as what to look at, not as results.
+One seed per scenario, default parameters, `default` appearance, natural
+calibration. Treat them as what to look at, not as results.
+
+| | `shift`, 60 s | | `vor`, 20 s | |
+| --- | --- | --- | --- | --- |
+| Landmarks | FaceMesh | perfect | FaceMesh | perfect |
+| Eye-in-head residual, yaw / pitch | 3.3° / 4.9° | 1.2° / 1.0° | 4.0° / 5.6° | 0.4° / 0.5° |
+| Zone position, median error | 12.4° | 4.5° | 9.3° | 14.9° |
+| In-zone agreement | 54% | 90% | 72% | 37% |
+| True warnings detected | 5 of 5 | 5 of 5 | none to detect | none to detect |
+| False warnings per minute | 4.7 | 0 | 6.0 | 24 |
+
+In `vor` the gaze never leaves the zone, so every warning there is false.
+FaceMesh scores *better* than perfect landmarks there only because its noise
+happens to land some frames back inside the zone.
 
 * **The geometry checks out.** With perfect landmarks, a still-headed
   calibration and head-still eye movements, `(dx, dy)` track the true eye
@@ -165,7 +179,7 @@ These are from short runs. Treat them as what to look at, not as results.
 * **FaceMesh is the larger error, and vertically it is nearly blind** on
   these frames. On the same frames, MediaPipe's landmarks give an
   eye-in-head residual of about 3.5–5° in yaw and 5° in pitch, with pitch
-  correlating only about 0.5 with the true eye elevation. Most of the yaw
+  correlating only 0.25–0.6 with the true eye elevation. Most of the yaw
   error comes from the **eye corners** (about 4 px median error), not the
   iris (about 1 px). Most of the pitch error comes from the iris. Whether a
   real face does better is the open question: compare `landmarks` and
