@@ -131,7 +131,10 @@ class Simulation:
         self.renderer.sensor.rng = np.random.default_rng((self.seed, index))
         posed = self.operator.pose(state)
         result = self.renderer.render(
-            posed, self.operator.appearance, self.operator.face.texture
+            posed,
+            self.operator.appearance,
+            self.operator.face.texture,
+            props=self.props(state),
         )
         return SimFrame(
             index=index,
@@ -172,6 +175,12 @@ class Simulation:
             render=result,
             truth=self._truth(state, None, result),
         )
+
+    def props(self, state) -> list:
+        """Moving scenery for a state: the carriage at its travel."""
+        from .scene import carriage_meshes
+
+        return carriage_meshes(state.carriage) if self.renderer.dynamic_carriage else []
 
     def next_frame(self) -> SimFrame:
         return self.render_state(*self.next_state())

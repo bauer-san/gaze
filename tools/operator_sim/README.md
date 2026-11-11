@@ -57,7 +57,11 @@ by:
   a large part of why downward gaze is hard to measure.
 
 A skull with hair, a white cap or a hairnet, ears, a neck, a torso in a
-white coat and apron, and arms reaching for the work complete the operator.
+white coat and long apron, legs, boots and gloves complete the operator.
+While cutting, the right hand drives the pusher plate's grip and the left
+holds the carriage's hand rail. The plate bears on the back of the product
+and rides with it, so both hands stay behind it as the carriage makes its
+cutting stroke: a slow push through the blade and a quicker draw back.
 `--appearance` picks one of four presets (`default`, `light`, `medium`,
 `dark`), which vary skin, iris and hair colour, headwear, face width and
 stature.

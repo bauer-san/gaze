@@ -74,12 +74,16 @@ class Renderer:
         ssaa: int = 2,
         static: bool = True,
         static_ssaa: int = 1,
+        dynamic_carriage: bool = True,
     ):
         self.scene = scene
         # Supersampling of the room and the saw. Costs nothing per frame,
         # since they are rendered once; worth it for presentation renders,
         # where stair-stepped stainless edges are the first thing you see.
         self.static_ssaa = max(1, int(static_ssaa))
+        # The carriage, product and pusher move with the cutting stroke, so
+        # they are drawn per frame (``props``) rather than baked in.
+        self.dynamic_carriage = dynamic_carriage
         self._floor = None
         self.sensor = sensor or SensorModel()
         self.ssaa = max(1, int(ssaa))
@@ -165,7 +169,10 @@ class Renderer:
         s = self.static_ssaa
         W, H = self.width * s, self.height * s
         fx, fy, cx, cy = self.fx * s, self.fy * s, self.cx * s, self.cy * s
-        g = self._gbuffer(self.scene.static_meshes(), fx, fy, cx, cy, W, H, cull=False)
+        g = self._gbuffer(
+            self.scene.static_meshes(carriage=not self.dynamic_carriage),
+            fx, fy, cx, cy, W, H, cull=False,
+        )  # fmt: skip
         col = np.zeros((W * H, 3))
         col[g.pixel] = self._shade(g, fx, fy, cx, cy)
         depth = np.full(W * H, np.inf)
@@ -205,8 +212,14 @@ class Renderer:
     # -- frames ----------------------------------------------------------------
 
     def render(
-        self, posed: PosedOperator, appearance, face_texture, shadows=None
+        self,
+        posed: PosedOperator,
+        appearance,
+        face_texture,
+        shadows=None,
+        props=None,
     ) -> RenderResult:
+        """One frame. ``props`` are extra moving meshes, such as the carriage."""
         self.appearance = appearance
         self.face_texture = face_texture
         W, H = self.width, self.height
@@ -214,11 +227,10 @@ class Renderer:
         depth = self._static_depth.copy()
         self.contact_shadows(colour, shadows)
 
-        # Body at native resolution.
-        if posed.body_meshes:
-            g = self._gbuffer(
-                posed.body_meshes, self.fx, self.fy, self.cx, self.cy, W, H
-            )
+        # Body, and any moving props, at native resolution.
+        native = list(posed.body_meshes) + list(props or [])
+        if native:
+            g = self._gbuffer(native, self.fx, self.fy, self.cx, self.cy, W, H)
             flat_c = colour.reshape(-1, 3)
             flat_d = depth.reshape(-1)
             nearer = g.depth < flat_d[g.pixel]

@@ -149,6 +149,7 @@ class State:
     neck_base: np.ndarray
     hips: np.ndarray
     stance: np.ndarray  # (x, z) of the feet, without sway
+    carriage: float  # carriage travel towards the blade, metres
     torso_R: np.ndarray
     fixation: np.ndarray  # world point both eyes are aimed at
     cyclopean: np.ndarray  # world, midpoint of the eyes
@@ -226,8 +227,12 @@ class Behaviour:
         self.pupil = OUNoise(r, 0.00015, 1.5)
 
         # Hands.
-        self.hand_pos = self._hand_targets("work")
+        self.hand_pos, self.hand_on_carriage = self._hand_targets("work")
         self.hand_plan = None
+        # Carriage travel towards the blade, metres, and where in the
+        # cutting stroke the operator is, seconds.
+        self.carriage = 0.0
+        self._stroke = 0.0
         self._start_segment(0, first=True)
 
     # -- helpers ---------------------------------------------------------------
@@ -243,16 +248,24 @@ class Behaviour:
             return self.targets[target].copy()
         return np.asarray(target, float)
 
-    def _hand_targets(self, mode: str) -> np.ndarray:
+    def _hand_targets(self, mode: str) -> tuple[np.ndarray, np.ndarray]:
+        """Wrist positions for a mode, with the carriage at rest, and which
+        hands are holding the carriage (and so travel with it).
+
+        Wrists, not palms: the palm sits about 75 mm beyond the wrist along
+        the forearm, so these put the palms on the grips. Both working hands
+        stay behind the pusher plate: the right drives the plate's grip,
+        which pushes the product through the blade, and the left holds the
+        carriage's hand rail. Neither reaches over the plate.
+        """
+        rail_left = [-0.38, 1.03, 0.48]
+        rail_right = [-0.10, 1.03, 0.48]
+        pusher = [-0.13, 1.12, 0.26]
         if mode == "tray":
-            return np.array([[-0.17, 1.03, 0.07], [0.62, 0.97, 0.30]])
+            return np.array([rail_left, [0.62, 0.97, 0.30]]), np.array([1.0, 0.0])
         if mode == "rest":
-            return np.array([[-0.30, 0.99, 0.42], [0.10, 0.99, 0.42]])
-        if mode == "carriage":
-            return np.array([[-0.42, 0.99, 0.41], [-0.13, 1.07, 0.27]])
-        # Pushing product through the blade from the left: the left hand
-        # steadies the product, the right drives the pusher plate's handle.
-        return np.array([[-0.17, 1.03, 0.07], [-0.13, 1.07, 0.27]])
+            return np.array([rail_left, rail_right]), np.array([1.0, 1.0])
+        return np.array([rail_left, pusher]), np.array([1.0, 1.0])
 
     @property
     def segment(self) -> Segment:
@@ -289,8 +302,13 @@ class Behaviour:
                     self.t + 0.1,
                     0.5 + 1.2 * np.linalg.norm(to - self.stance),
                 )
-        hands = self._hand_targets(seg.hands)
-        self.hand_plan = (self.hand_pos.copy(), hands, self.t + 0.1, 0.6)
+        hands, on = self._hand_targets(seg.hands)
+        self.hand_plan = (
+            (self.hand_pos.copy(), self.hand_on_carriage.copy()),
+            (hands, on),
+            self.t + 0.1,
+            0.6,
+        )
         self.next_scan = self.t + 0.4 if seg.scan > 0 else None
 
     # -- kinematics --------------------------------------------------------------
@@ -604,16 +622,21 @@ class Behaviour:
 
         # Hands.
         if self.hand_plan is not None:
-            a, b, t0, dur = self.hand_plan
+            (a, fa), (b, fb), t0, dur = self.hand_plan
             s = (self.t - t0) / dur
             if s >= 0:
-                self.hand_pos = a + (b - a) * min_jerk(s)
+                k = min_jerk(s)
+                self.hand_pos = a + (b - a) * k
+                self.hand_on_carriage = fa + (fb - fa) * k
                 if s >= 1:
                     self.hand_plan = None
-        hands = self.hand_pos.copy()
+        # The cutting stroke: push the carriage through the blade, draw it
+        # back, again. Only while working; otherwise it stays where it is.
         if seg.hands == "work":
-            push = 0.025 * math.sin(2 * math.pi * 0.35 * self.t)
-            hands[:, 2] += push
+            self._stroke += dt
+            self.carriage = cutting_stroke(self._stroke)
+        hands = self.hand_pos.copy()
+        hands[:, 2] -= self.hand_on_carriage * self.carriage
 
         return State(
             t=self.t,
@@ -622,6 +645,7 @@ class Behaviour:
             neck_base=neck_base,
             hips=hips,
             stance=self.stance.copy(),
+            carriage=self.carriage,
             torso_R=torso_R,
             fixation=fix,
             cyclopean=cyc,
@@ -635,6 +659,20 @@ class Behaviour:
             head_angles=tuple(float(x) for x in head),
             eye_angles=np.array(eye_angles),
         )
+
+
+def cutting_stroke(
+    t: float, length: float = 0.10, push: float = 3.0, back: float = 1.5
+):
+    """Carriage travel over a repeating cutting stroke, metres.
+
+    A slow, steady push through the blade, then a quicker draw back.
+    """
+    period = push + back
+    s = t % period
+    if s < push:
+        return length * min_jerk(s / push)
+    return length * (1.0 - min_jerk((s - push) / back))
 
 
 # -- scenarios -------------------------------------------------------------

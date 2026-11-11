@@ -141,7 +141,15 @@ def _render_view(job):
         (-0.30, 0.0, 0.45, 0.25),
         (0.80, 0.35, 0.45, 0.35),
     ]
-    r = rend.render(posed, op.appearance, op.face.texture, shadows=shadows)
+    from .scene import carriage_meshes
+
+    r = rend.render(
+        posed,
+        op.appearance,
+        op.face.texture,
+        shadows=shadows,
+        props=carriage_meshes(state.carriage),
+    )
     # The beam ends where the operator is looking if that is on the saw,
     # and at a fixed length otherwise, so a look at someone off-screen does
     # not throw a line across the frame.

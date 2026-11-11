@@ -180,8 +180,11 @@ class Scene:
             "head_housing": np.array([0.17, 1.62, 0.07]),
         }
 
-    def static_meshes(self) -> list:
-        """The saw, the furniture and the room. Built once per renderer."""
+    def static_meshes(self, carriage: bool = True) -> list:
+        """The saw, the furniture and the room. Built once per renderer.
+
+        ``carriage=False`` leaves out the moving carriage assembly.
+        """
         meshes = []
         add = meshes.append
         # Room. The back wall is behind the operator: it is what the camera
@@ -228,7 +231,7 @@ class Scene:
         # The saw. Gross dimensions from the drawing; detail after the
         # Hi-Yield 14's published features (peaked upper housing, swing-open
         # stainless doors). No markings are reproduced.
-        meshes.extend(saw_meshes())
+        meshes.extend(saw_meshes(carriage))
         # Product tray to the operator's right.
         add(box((0.50, 0.85, 0.05), (1.10, 0.88, 0.65), M.METAL, 2))
         add(box((0.60, 0.88, 0.15), (1.0, 0.95, 0.55), M.APRON, 2))
@@ -246,8 +249,12 @@ class Scene:
         return meshes
 
 
-def saw_meshes() -> list:
-    """The band saw itself, in the world frame."""
+def saw_meshes(carriage: bool = True) -> list:
+    """The band saw itself, in the world frame.
+
+    ``carriage=False`` leaves out the moving carriage assembly, for a
+    renderer that draws it per frame at its current travel.
+    """
     meshes = []
     add = meshes.append
     T = TABLE_Y
@@ -340,10 +347,8 @@ def saw_meshes() -> list:
         )
     )
 
-    # Sliding carriage to the left: a cutting board on a stainless frame,
-    # riding on two round rails, with a hand rail along the front.
-    add(box((-0.56, T, -0.32), (-0.008, T + 0.02, TABLE_FRONT_Z), M.BOARD, 3))
-    add(box((-0.57, T - 0.03, -0.33), (-0.006, T, TABLE_FRONT_Z + 0.01), M.METAL, 2))
+    # The carriage's rails, fixed to the frame. The carriage itself, with
+    # the product and the pusher plate, moves: see carriage_meshes().
     for rx in (-0.50, -0.07):
         add(
             tube(
@@ -362,45 +367,8 @@ def saw_meshes() -> list:
             M.METAL,
         )
     )
-    for hx in (-0.53, -0.08):
-        add(
-            tube(
-                (hx, T + 0.02, TABLE_FRONT_Z + 0.01),
-                (hx, T + 0.07, TABLE_FRONT_Z + 0.05),
-                0.009,
-                material=M.METAL,
-                segments=8,
-            )
-        )
-    add(
-        tube(
-            (-0.53, T + 0.07, TABLE_FRONT_Z + 0.05),
-            (-0.08, T + 0.07, TABLE_FRONT_Z + 0.05),
-            0.012,
-            material=M.METAL,
-            segments=10,
-        )
-    )
-    # Pusher plate (end gauge) behind the product, with its lever handle.
-    add(box((-0.30, T + 0.02, 0.16), (-0.03, T + 0.16, 0.175), M.METAL))
-    add(
-        tube(
-            (-0.16, T + 0.12, 0.175),
-            (-0.16, T + 0.15, 0.27),
-            0.009,
-            material=M.METAL,
-            segments=8,
-        )
-    )
-    add(
-        tube(
-            (-0.22, T + 0.15, 0.27),
-            (-0.08, T + 0.15, 0.27),
-            0.013,
-            material=M.DARK,
-            segments=10,
-        )
-    )
+    if carriage:
+        meshes.extend(carriage_meshes(0.0))
 
     # Blade, upper guide and guide post, fitted to the drawing. The guide
     # is about 46 mm wide and stands about 20 mm proud of the teeth; the
@@ -435,7 +403,6 @@ def saw_meshes() -> list:
 
     # Product: a primal being cut across the blade line, and steaks already
     # cut lying on the fixed table.
-    add(uv_sphere((-0.10, T + 0.065, 0.02), (0.11, 0.10, 0.06), 10, 18, M.MEAT))
     for sx, sz in ((0.10, 0.05), (0.16, 0.12), (0.22, 0.03)):
         # Lying flat: thin in y.
         add(uv_sphere((sx, T + 0.012, sz), (0.06, 0.012, 0.05), 6, 14, M.MEAT))
@@ -444,6 +411,85 @@ def saw_meshes() -> list:
     add(box((0.33, 1.06, 0.04), (0.405, 1.18, 0.045), M.PANEL))
     add(uv_sphere((0.367, 1.14, 0.046), (0.013, 0.013, 0.006), 6, 10, M.WALL))
     add(uv_sphere((0.367, 1.09, 0.046), (0.013, 0.013, 0.006), 6, 10, M.MEAT))
+    return meshes
+
+
+# Product sits on the carriage across the blade line; its back face, towards
+# the operator, is where the pusher plate bears on it.
+PRODUCT_BACK_Z = 0.08
+PUSHER_GRIP = (-0.15, TABLE_Y + 0.17, 0.19)
+CARRIAGE_RAIL = (-0.40, TABLE_Y + 0.07, TABLE_FRONT_Z + 0.05)
+
+
+def carriage_meshes(travel: float = 0.0) -> list:
+    """The sliding carriage, product and pusher, moved ``travel`` metres
+    towards the blade (along -z).
+
+    The pusher plate (end gauge) bears on the back of the product and rides
+    with it, so that the operator pushes the product through the blade by
+    the plate's handle and keeps their hands behind the plate, never over
+    it. The hand rail along the carriage's front is the other hand's grip.
+    """
+    T = TABLE_Y
+    dz = np.array([0.0, 0.0, -travel])
+    meshes = []
+
+    def add(m):
+        meshes.append(m.transformed(np.eye(3), dz))
+
+    add(box((-0.56, T, -0.32), (-0.008, T + 0.02, TABLE_FRONT_Z), M.BOARD, 3))
+    add(box((-0.57, T - 0.03, -0.33), (-0.006, T, TABLE_FRONT_Z + 0.01), M.METAL, 2))
+    for hx in (-0.53, -0.08):
+        add(
+            tube(
+                (hx, T + 0.02, TABLE_FRONT_Z + 0.01),
+                (hx, T + 0.07, TABLE_FRONT_Z + 0.05),
+                0.009,
+                material=M.METAL,
+                segments=8,
+            )
+        )
+    add(
+        tube(
+            (-0.53, T + 0.07, TABLE_FRONT_Z + 0.05),
+            (-0.08, T + 0.07, TABLE_FRONT_Z + 0.05),
+            0.012,
+            material=M.METAL,
+            segments=10,
+        )
+    )
+    # The product: a primal across the blade line.
+    add(
+        uv_sphere(
+            (-0.10, T + 0.065, PRODUCT_BACK_Z - 0.06),
+            (0.11, 0.10, 0.06),
+            10,
+            18,
+            M.MEAT,
+        )
+    )
+    # Pusher plate against the product's back face, with its handle and grip.
+    z0 = PRODUCT_BACK_Z + 0.005
+    add(box((-0.27, T + 0.02, z0), (-0.02, T + 0.15, z0 + 0.015), M.METAL))
+    gx, gy, gz = PUSHER_GRIP
+    add(
+        tube(
+            (gx, T + 0.13, z0 + 0.015),
+            (gx, gy, gz),
+            0.009,
+            material=M.METAL,
+            segments=8,
+        )
+    )
+    add(
+        tube(
+            (gx - 0.06, gy, gz),
+            (gx + 0.06, gy, gz),
+            0.013,
+            material=M.DARK,
+            segments=10,
+        )
+    )
     return meshes
 
 
