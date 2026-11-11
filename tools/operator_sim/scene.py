@@ -36,6 +36,18 @@ TABLE_Y = 0.915
 HEAD_BOTTOM_Y = 1.34
 HEAD_TOP_Y = 1.80
 TABLE_FRONT_Z = 0.36
+# Upper housing, from the drawing: 0.47 m wide, from 47 mm left of the blade;
+# 0.15 m deep, its front face 60 mm ahead of the teeth.
+HEAD_LEFT_X = -0.047
+HEAD_RIGHT_X = 0.427
+HEAD_FRONT_Z = 0.06
+HEAD_BACK_Z = -0.087
+GUIDE_BOTTOM_Y = 1.09
+# Median position of the default operator's eyes while watching the cut:
+# what a camera bracket is aimed at when it is set up.
+OPERATOR_EYES = (-0.018, 1.578, 0.60)
+POST_X = 0.012
+POST_Z = -0.108
 BLADE_TEETH_Z = 0.010
 
 
@@ -103,16 +115,29 @@ BLADE_ZONE = Zone(
 class CameraMount:
     """Where the camera is and what it points at.
 
-    The default is under the front edge of the upper wheel housing, a little
-    to the right of the blade guide, aimed up at where the operator's eyes
-    usually are. That gives the 0.6 to 0.65 m working distance the gaze
-    pipeline was tuned at, and from below: the operator looks down at the
-    blade, so a camera below eye level sees the face nearly frontally while a
-    camera at eye level would see the top of a bowed head.
+    The default is the mount the placement study recommends (see
+    :mod:`.placement` and the README): on a short bracket off the front-left
+    corner of the upper wheel housing, as the operator sees it. That puts it
+
+    * at the housing's left edge, 50 mm to the operator's left of the blade,
+      nearly in line with the operator's face, so it sees the face within
+      about 10 degrees of head-on while they watch the cut;
+    * with its centre 25 mm above the housing's underside (53.7 in from the
+      floor), so the camera body stays clear of the product, which passes
+      beneath the housing at up to the saw's maximum cut height;
+    * 70 mm proud of the housing's front face, which brings it closer
+      (about 0.5 m from the eyes) without putting it in front of the blade
+      guide, where it would sit in the operator's line of sight to the top
+      of a raised guide;
+    * tilted up about 24 degrees, aimed at the operator's eyes.
+
+    Every option above the housing's underside looks *down* onto the upper
+    eyelid, because the operator's line of sight to the cut runs well below
+    it. That is the main cost of any mount the product clearance allows.
     """
 
-    position: tuple = (0.10, HEAD_BOTTOM_Y - 0.015, 0.075)
-    target: tuple = (-0.03, 1.60, 0.58)
+    position: tuple = (-0.05, HEAD_BOTTOM_Y + 0.025, 0.13)
+    target: tuple = OPERATOR_EYES
     width: int = 1280
     height: int = 720
     # D435i colour sensor at 1280x720.
@@ -191,8 +216,22 @@ class Scene:
             add(box((0.8, sy, 3.35), (2.2, sy + 0.03, 3.9), M.METAL))
 
         # The saw.
-        add(box((-0.07, HEAD_BOTTOM_Y, -0.20), (0.41, HEAD_TOP_Y, 0.06), M.METAL, 3))
-        add(box((0.30, TABLE_Y, -0.20), (0.41, HEAD_BOTTOM_Y, 0.04), M.METAL, 2))
+        add(
+            box(
+                (HEAD_LEFT_X, HEAD_BOTTOM_Y, HEAD_BACK_Z),
+                (HEAD_RIGHT_X, HEAD_TOP_Y, HEAD_FRONT_Z),
+                M.METAL,
+                3,
+            )
+        )
+        add(
+            box(
+                (0.32, TABLE_Y, HEAD_BACK_Z),
+                (HEAD_RIGHT_X, HEAD_BOTTOM_Y, 0.04),
+                M.METAL,
+                2,
+            )
+        )
         add(box((-0.07, 0.15, -0.30), (0.41, TABLE_Y - 0.02, 0.25), M.METAL, 3))
         for lx in (-0.05, 0.37):
             for lz in (-0.27, 0.22):
@@ -238,7 +277,11 @@ class Scene:
                 material=M.DARK,
             )
         )
-        # Blade, upper guide and its guard.
+        # Blade, upper guide and guide post, fitted to the drawing. The guide
+        # is about 46 mm wide and stands about 20 mm proud of the teeth; the
+        # post runs up behind the housing, about 110 mm behind the teeth, and
+        # carries the guide on an arm with a star knob (here at 47.8 in,
+        # but it moves with the guide).
         add(
             box(
                 (-0.0006, TABLE_Y + 0.02, -0.006),
@@ -246,17 +289,26 @@ class Scene:
                 M.BLADE,
             )
         )
-        add(box((-0.025, 1.09, -0.035), (0.03, HEAD_BOTTOM_Y, 0.035), M.METAL))
-        add(box((-0.03, 1.09, 0.035), (0.035, HEAD_BOTTOM_Y, 0.04), M.METAL))
+        add(box((-0.022, GUIDE_BOTTOM_Y, -0.03), (0.024, HEAD_BOTTOM_Y, 0.03), M.METAL))
+        add(box((-0.012, 1.20, POST_Z - 0.012), (0.03, 1.228, -0.03), M.METAL))
+        add(uv_sphere((-0.03, 1.214, POST_Z), (0.02, 0.012, 0.02), 6, 10, M.DARK))
         add(
             tube(
-                (0.05, 1.12, 0.0),
-                (0.05, HEAD_BOTTOM_Y + 0.25, 0.0),
-                0.009,
+                (POST_X, 1.15, POST_Z),
+                (POST_X, HEAD_TOP_Y + 0.15, POST_Z),
+                0.011,
                 material=M.METAL,
                 segments=8,
             )
         )
+        for by in (1.44, 1.67):  # the two post brackets
+            add(
+                box(
+                    (POST_X - 0.025, by - 0.02, POST_Z - 0.02),
+                    (POST_X + 0.02, by + 0.02, HEAD_BACK_Z),
+                    M.METAL,
+                )
+            )
         # Product being cut, sitting across the blade line.
         add(
             box(

@@ -111,6 +111,8 @@ def generate(
     seed: int = 0,
     appearance: str = "default",
     calibration_head: str = "natural",
+    camera: tuple | None = None,
+    aim: tuple | None = None,
     workers: int = 0,
     ssaa: int = 2,
     video: bool = False,
@@ -133,6 +135,8 @@ def generate(
         appearance=appearance,
         ssaa=ssaa,
         calibration_head=calibration_head,
+        camera=camera,
+        aim=aim,
     )
     sim = Simulation(**config)
     n = sim.frame_count

@@ -89,12 +89,83 @@ head as the operator sees it, the column is on the right, and the sliding
 carriage is to the left of the blade. The geometry is in
 [`scene.py`](scene.py); nothing of the drawing itself is reproduced.
 
-The camera is a D435i at 1280×720 (70.4° × 43.3°), mounted under the front
-edge of the upper wheel housing just right of the blade guide, aimed up at
-the operator's eyes. That gives the 0.55–0.65 m working distance the
-pipeline was tuned at. It is also why a camera there works at all: the
-operator looks *down* at the blade, so a camera below eye level sees the face
-nearly frontally. `CameraMount` moves it.
+The camera is a D435i at 1280×720 (70.4° × 43.3°), on the mount the
+placement study below recommends: a short bracket off the front-left corner
+of the upper wheel housing, aimed up at the operator's eyes. `--camera
+X,Y,Z` (and `--aim`) moves it for any command that renders, and
+`CameraMount` in code.
+
+### Where to put the camera
+
+`python -m tools.operator_sim placement` scores a grid of candidate mounts
+from ground truth, without rendering, in under a minute. Each candidate is
+aimed at the operator's median eye position while they watch the cut. It is
+scored on:
+
+* how head-on it sees the face
+* how obliquely it sees the iris
+* whether it is below or above the line of sight
+* iris size in pixels
+* how often the saw, the product or the operator's own arms block an eye
+
+Candidates are restricted to what standoffs or a bracket can reach: within
+0.15 m of the housing, and never into the **product envelope**. The housing's
+underside is the saw's maximum cut height, and product on the carriage, and
+the pieces coming off the blade, pass beneath it across the whole table. So
+nothing can hang below it there.
+
+The shortlist was then rendered and run through FaceMesh. The table shows
+two 30 s shifts with identical behaviour per row group.
+
+| Mount (from the blade, as the operator sees it) | Face off-axis | Gaze error, median | In-zone agreement | False warnings/min |
+| --- | --- | --- | --- | --- |
+| Previous: 100 mm right, 52.2 in, 15 mm in front of the housing | 12.8° | 10.9° / 5.3° | 56% / 91% | 9.2 / 1.7 |
+| **Recommended: 50 mm left, 53.7 in, 70 mm in front of the housing** | ≈9° | 6.7° / 7.8° | 86% / 90% | 1.9 / 1.7 |
+| In line with the blade, 53.7 in, 130 mm in front of the housing | 4.1° | 7.4° / 7.5° | 89% / 84% | 0 / 1.7 |
+
+(seed 0 with the default operator / seed 1 with the `light` operator)
+
+**The rendered runs do not separate the mounts.** In the first pair the
+recommended mount roughly halves the gaze error and the false alarms. In the
+second, the previous position does best. Over 30 s, where each four-corner
+calibration happens to land moves the result more than the mount does. It
+would take many longer runs to resolve a difference this size end to end.
+So the recommendation rests on the geometry, where the differences are
+consistent across every frame, and on the product clearance, which the
+previous position violated: it hung 15 mm *below* the housing's underside.
+
+What decides it:
+
+* **Side to side**, the camera wants to be in line with the operator's face,
+  who stands about 40 mm to the left of the blade. The previous position, on
+  the right of the blade, saw the face 13° off-axis. Moving 150 mm left takes
+  out most of that.
+* **Height** is fixed by the product clearance. The camera's centre is 25 mm
+  above the housing's underside, so its body clears the maximum cut height
+  by about 10 mm. Every mount allowed there is *above* the operator's line of
+  sight to the cut, by about 20–25°, so it looks down onto the upper eyelid,
+  which follows the eye down. That is the price of the clearance, and the
+  main reason vertical gaze is the weaker axis.
+* **Forward** brings the camera closer: 0.5 m instead of 0.6 m, about 20 px
+  of iris instead of 18, and the face more head-on. But a camera directly in
+  front of the blade guide sits in the operator's line of sight to the top of
+  the guide when it is raised for tall product. 50 mm to the left keeps it
+  beside that line, at little cost. The centred mount scores best on
+  geometry; prefer it only if the guide is never raised high enough for the
+  camera to get in the way.
+* The **guide-post side**, about 110 mm behind the teeth on the operator's
+  left, was considered and rejected. It is further away (0.74 m), sees the
+  face from the side, and the guide and its arm block an eye in about 15% of
+  frames.
+
+The recommended mount, in the drawing's terms:
+
+| | |
+| --- | --- |
+| Camera centre height | 53.7 in (1.365 m) from the floor; body bottom 0.4 in above the housing's underside |
+| Side to side | At the housing's left edge: about 2 in to the operator's left of the blade |
+| Front to back | About 2.75 in in front of the housing's front face |
+| Aim | Up about 24°, and about 4° to the right, at the operator's eyes |
 
 The **attention zone** runs from the bottom of the upper blade guide down the
 blade to the table, and across the strip of table in front of the teeth:
@@ -156,7 +227,9 @@ alone.
 ## What it has shown so far
 
 One seed per scenario, default parameters, `default` appearance, natural
-calibration. Treat them as what to look at, not as results.
+calibration, and the *previous* camera position. The recommended mount does
+better with FaceMesh in the loop; see the placement table above. Treat them
+as what to look at, not as results.
 
 | | `shift`, 60 s | | `vor`, 20 s | |
 | --- | --- | --- | --- | --- |

@@ -238,3 +238,31 @@ def test_vor_is_where_eye_in_head_stops_being_gaze():
     rep = score(run, Params(), landmarks="truth", ideal=False)
     assert rep["calibration_ok"]
     assert rep["in_zone"]["false_out"] > 0.2
+
+
+# -- camera placement -------------------------------------------------------------
+
+
+def test_nothing_hangs_into_the_product_envelope():
+    from tools.operator_sim.placement import mountable
+    from tools.operator_sim.scene import HEAD_BOTTOM_Y
+
+    # Over the table, below the housing: product passes there.
+    assert not mountable((-0.05, HEAD_BOTTOM_Y - 0.02, 0.10))
+    # The same spot raised clear of the underside is fine.
+    assert mountable((-0.05, HEAD_BOTTOM_Y + 0.025, 0.10))
+    # Inside the housing is not a mount, nor is anywhere far from it.
+    assert not mountable((0.2, 1.6, 0.0))
+    assert not mountable((-0.05, 1.4, 0.40))
+
+
+def test_placement_prefers_a_camera_in_line_with_the_operator():
+    from tools.operator_sim.placement import study
+
+    centred, offset = study(
+        [(-0.03, 1.365, 0.13), (0.20, 1.365, 0.13)], "fixation", duration=4.0
+    )
+    assert centred["face_deg"] < offset["face_deg"] - 5
+    assert centred["blocked"] == 0.0
+    # The camera is above the line of sight to the cut, looking down at the lid.
+    assert centred["camera_below_deg"] < 0

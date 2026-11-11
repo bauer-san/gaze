@@ -5,6 +5,7 @@
     python -m tools.operator_sim sweep runs/shift --grid filter_alpha=0.08,0.12,0.2
     python -m tools.operator_sim snapshot --scenario eyes-only --at 3.0 --out frame.png
     python -m tools.operator_sim live runs/shift -- --tui --recalibrate
+    python -m tools.operator_sim placement --x=-0.15,0.1,0.025 --z=0.07,0.19,0.03
 
 Run from the repository root.
 """
@@ -18,6 +19,13 @@ import sys
 
 from .behaviour import SCENARIOS
 from .face import PRESETS
+
+
+def _xyz(text: str) -> tuple:
+    parts = [float(v) for v in text.split(",")]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("expected X,Y,Z")
+    return tuple(parts)
 
 
 def _sim_args(p: argparse.ArgumentParser, seconds: float = 60.0) -> None:
@@ -39,6 +47,19 @@ def _sim_args(p: argparse.ArgumentParser, seconds: float = 60.0) -> None:
         default="natural",
         choices=("natural", "still"),
         help="how the operator moves their head while calibrating",
+    )
+    p.add_argument(
+        "--camera",
+        type=_xyz,
+        metavar="X,Y,Z",
+        help="camera position in metres: x to the operator's right of the blade, "
+        "y up from the floor, z from the teeth towards the operator",
+    )
+    p.add_argument(
+        "--aim",
+        type=_xyz,
+        metavar="X,Y,Z",
+        help="point the camera is aimed at (default: the operator's eyes)",
     )
 
 
@@ -100,6 +121,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--depth", action="store_true", help="also write a false-colour depth image"
     )
 
+    pl = sub.add_parser(
+        "placement", help="score candidate camera mounts (no rendering)"
+    )
+    pl.add_argument("--scenario", default="shift", choices=sorted(SCENARIOS))
+    pl.add_argument("--seconds", type=float, default=60.0)
+    pl.add_argument("--seed", type=int, default=0)
+    for axis, default in (("x", "-0.15,0.1,0.025"), ("y", "1.365,1.43,0.03"),
+                          ("z", "0.07,0.19,0.03")):  # fmt: skip
+        pl.add_argument(
+            f"--{axis}",
+            default=default,
+            metavar="FROM,TO,STEP",
+            help=f"candidate {axis} positions, metres (default {default})",
+        )
+    pl.add_argument("--top", type=int, default=20, help="rows to print")
+    pl.add_argument("--csv", type=pathlib.Path)
+
     lv = sub.add_parser("live", help="run the real monitor (demo.py) on a recorded run")
     lv.add_argument("run", type=pathlib.Path, help="a run generated with --save-frames")
     lv.add_argument(
@@ -127,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         out = generate(
             args.out, scenario=args.scenario, duration=args.seconds, fps=args.fps,
             seed=args.seed, appearance=args.appearance, workers=args.workers,
-            calibration_head=args.calibration_head,
+            calibration_head=args.calibration_head, camera=args.camera, aim=args.aim,
             ssaa=args.ssaa, video=args.video, save_frames=args.save_frames,
         )  # fmt: skip
         print(f"Wrote {out}")
@@ -179,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
                 w.writerows(rows)
         return 0
 
+    if args.command == "placement":
+        return _placement(args)
+
     if args.command == "snapshot":
         return _snapshot(args)
 
@@ -190,6 +231,41 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
+def _placement(args) -> int:
+    import numpy as np
+
+    from .evaluate import format_table
+    from .placement import grid, study
+    from .scene import CameraMount
+
+    def rng(text):
+        a, b, step = (float(v) for v in text.split(","))
+        return [round(float(v), 4) for v in np.arange(a, b + step / 2, step)]
+
+    candidates = grid(rng(args.x), rng(args.y), rng(args.z))
+    current = tuple(CameraMount().position)
+    if current not in candidates:
+        candidates.append(current)
+    print(f"{len(candidates)} mountable candidates", file=sys.stderr)
+    rows = study(candidates, args.scenario, args.seconds, args.seed)
+    for r in rows:
+        r["default"] = (
+            "*"
+            if (r["x"], r["y"], r["z"]) == tuple(round(v, 3) for v in current)
+            else ""
+        )
+    rows.sort(key=lambda r: r["face_deg"] + 0.5 * r["iris_deg"])
+    print(format_table(rows[: args.top]))
+    if args.csv:
+        import csv
+
+        with open(args.csv, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+    return 0
+
+
 def _snapshot(args) -> int:
     import cv2
     import numpy as np
@@ -199,7 +275,7 @@ def _snapshot(args) -> int:
     sim = Simulation(
         args.scenario, duration=args.seconds, fps=args.fps, seed=args.seed,
         appearance=args.appearance, ssaa=args.ssaa,
-        calibration_head=args.calibration_head,
+        calibration_head=args.calibration_head, camera=args.camera, aim=args.aim,
     )  # fmt: skip
     wanted = sorted(int(round(t * args.fps)) for t in args.at)
     out = args.out

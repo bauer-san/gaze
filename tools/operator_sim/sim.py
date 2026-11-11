@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from .face import PRESETS, Appearance
 from .mathutil import normalize, yaw_pitch
 from .operator import Operator
 from .render import Renderer, RenderResult, SensorModel
-from .scene import Scene, angular_size_deg
+from .scene import OPERATOR_EYES, Scene, angular_size_deg
 
 
 @dataclass
@@ -50,6 +51,8 @@ class Simulation:
         appearance: Appearance | str = "default",
         traits: Traits | None = None,
         scene: Scene | None = None,
+        camera: tuple | None = None,
+        aim: tuple | None = None,
         sensor: SensorModel | None = None,
         ssaa: int = 2,
         calibrate: bool = True,
@@ -59,6 +62,17 @@ class Simulation:
         if isinstance(appearance, str):
             appearance = PRESETS[appearance]
         self.scene = scene or Scene()
+        if camera is not None or aim is not None:
+            # A camera position, in the world frame, aimed at the operator's
+            # eyes unless told otherwise.
+            mount = dataclasses.replace(
+                self.scene.mount,
+                position=(
+                    tuple(camera) if camera is not None else self.scene.mount.position
+                ),
+                target=tuple(aim) if aim is not None else OPERATOR_EYES,
+            )
+            self.scene = dataclasses.replace(self.scene, mount=mount)
         self.fps = fps
         self.operator = Operator(appearance)
         if isinstance(scenario, str):
