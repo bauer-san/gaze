@@ -315,45 +315,56 @@ alone.
 
 ## What it has shown so far
 
-One seed per scenario, default parameters, `default` appearance, natural
-calibration, and the *previous* camera position. The recommended mount does
-better with FaceMesh in the loop; see the placement table above. Treat them
-as what to look at, not as results.
+One seed per scenario (seed 0), default parameters, the `default`
+appearance, the recommended mount and the realistic stance. Each run is
+scored twice, on FaceMesh's landmarks and on perfect ones. Treat these as
+what to look at, not as results.
 
-| | `shift`, 60 s | | `vor`, 20 s | |
-| --- | --- | --- | --- | --- |
-| Landmarks | FaceMesh | perfect | FaceMesh | perfect |
-| Eye-in-head residual, yaw / pitch | 3.3° / 4.9° | 1.2° / 1.0° | 4.0° / 5.6° | 0.4° / 0.5° |
-| Zone position, median error | 12.4° | 4.5° | 9.3° | 14.9° |
-| In-zone agreement | 54% | 90% | 72% | 37% |
-| True warnings detected | 5 of 5 | 5 of 5 | none to detect | none to detect |
-| False warnings per minute | 4.7 | 0 | 6.0 | 24 |
+| | `shift` 60 s, head-still commissioning | | `shift` 60 s, natural commissioning | | `vor` 20 s, head-still commissioning | |
+| --- | --- | --- | --- | --- | --- | --- |
+| Landmarks | FaceMesh | perfect | FaceMesh | perfect | FaceMesh | perfect |
+| Eye-in-head residual, yaw / pitch | 3.4° / 5.8° | 0.8° / 0.8° | 4.1° / 4.3° | 0.9° / 0.7° | 3.8° / 4.4° | 0.5° / 0.7° |
+| Pitch correlation with the true eye elevation | 0.32 | 0.99 | 0.25 | 0.99 | 0.71 | 0.99 |
+| Zone position, median error | 5.5° | 4.3° | 16.4° | 9.3° | 8.3° | 8.5° |
+| In-zone agreement | 75% | 87% | 43% | 74% | 79% | 100% |
+| True warnings detected | 2 of 3 | 2 of 3 | 3 of 3 | 3 of 3 | none to detect | none to detect |
+| False warnings per minute | 0.9 | 0 | 3.7 | 2.8 | 0 | 0 |
 
-In `vor` the gaze never leaves the zone, so every warning there is false.
-FaceMesh scores *better* than perfect landmarks there only because its noise
-happens to land some frames back inside the zone.
+Landmark error against the rendered truth was about the same in all three
+runs: iris centres 1.5 px median, eye corners 5.8–6.6 px, all 468 points
+4.9–5.4 px. The face was found in every frame.
 
-* **The geometry checks out.** With perfect landmarks, a still-headed
-  calibration and head-still eye movements, `(dx, dy)` track the true eye
-  rotation to about 0.5° in both axes. The calibrated zone position comes in
-  at a 2–2.5° median error, mostly EMA lag around saccades. The truth, the
+In `vor` the line of sight never leaves the zone. With the operator this
+close, the zone is wide enough (about 21° across) that the 15° head sweep
+stays inside it, so there are no false warnings. The 8.5° zone error with
+perfect landmarks is the eye counter-rotating in the head.
+
+The warning missed in both head-still runs is a 0.8 s look at the product,
+which sits just outside the zone's edge; with 4–5° of zone error a target
+that close to the boundary is ambiguous. FaceMesh's one false warning in
+that run is a single 12 s stretch of watching the cut read as out of zone.
+
+* **The geometry checks out.** With perfect landmarks, `(dx, dy)` track the
+  true eye rotation to under 1° in both axes, in every run. The truth, the
   renderer and the replay agree with each other, and `tests/` pins this.
+* **Commissioning with the head still matters as much as the detector.**
+  Natural head movement during commissioning triples the median zone error
+  with FaceMesh (5.5° to 16.4°) and quadruples the false warnings. It costs
+  more than FaceMesh's own error does, on the same run.
 * **FaceMesh is the larger error, and vertically it is nearly blind** on
-  these frames. On the same frames, MediaPipe's landmarks give an
-  eye-in-head residual of about 3.5–5° in yaw and 5° in pitch, with pitch
-  correlating only 0.25–0.6 with the true eye elevation. Most of the yaw
-  error comes from the **eye corners** (about 4 px median error), not the
-  iris (about 1 px). Most of the pitch error comes from the iris. Whether a
-  real face does better is the open question: compare `landmarks` and
-  `eye_in_head` with `tools/gaze_noise.py` captures from the hardware.
-* **Eye-in-head is not gaze.** In the `vor` scenario the line of sight never
-  leaves the zone, yet the pipeline calls it out of zone much of the time,
-  even with perfect landmarks: it measures the eye in the head, and when the
-  head turns with gaze held, the eye turns the other way. The same mechanism
-  makes calibration depend on how the operator moved their head while
-  commissioning. An operator who turns their head towards each corner
-  calibrates a zone that is too small. Head pose is the obvious next input,
-  and the simulator's `head_*_deg` truth is there to fit it against.
+  these frames: an eye-in-head residual of 3.4–4.1° in yaw and 4.3–5.8° in
+  pitch, with pitch correlating only 0.25–0.7 with the true eye elevation
+  against 0.99 for perfect landmarks. Most of the yaw error comes from the
+  **eye corners** (about 6 px median error), not the iris (about 1.5 px).
+  Whether a real face does better is the open question: compare `landmarks`
+  and `eye_in_head` with `tools/gaze_noise.py` captures from the hardware.
+* **Eye-in-head is not gaze.** The pipeline measures the eye in the head,
+  so when the head turns with gaze held, the reading moves. In `vor` that
+  costs 8.5° of zone error even with perfect landmarks, and after a large
+  head turn it takes a couple of seconds of the head settling for the
+  reading to come back. The same mechanism is why commissioning needs the
+  head still. Head pose is the obvious next input, and the simulator's
+  `head_*_deg` truth is there to fit it against.
 
 ## The promo video
 
