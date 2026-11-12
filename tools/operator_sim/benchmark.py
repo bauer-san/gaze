@@ -162,6 +162,16 @@ def suite(name: str) -> list[Case]:
                      calibration_head="natural")  # fmt: skip
             )
         return cases
+    if name == "facemesh-natural":
+        # The rendered tier again, commissioned with the head turning
+        # towards the corners. MediaPipe's iris barely registers eye-only
+        # vertical movement, so a head-still commissioning gives the head
+        # model a zone a few degrees tall; this is the comparison that shows
+        # what commissioning should ask for.
+        return [
+            dataclasses.replace(c, calibration_head="natural")
+            for c in suite("facemesh")
+        ]
     if name == "facemesh":
         # The rendered tier: small, because each case renders for minutes
         # the first time. Cached afterwards.
@@ -182,7 +192,9 @@ def suite(name: str) -> list[Case]:
             Case("flicker", 30, 0, appearance="light"),
             Case("vor", 20, 0),
         ]
-    raise ValueError(f"Unknown suite {name!r}: quick, standard or facemesh")
+    raise ValueError(
+        f"Unknown suite {name!r}: quick, standard, facemesh or facemesh-natural"
+    )
 
 
 # -- running -------------------------------------------------------------------

@@ -151,7 +151,9 @@ def build_parser() -> argparse.ArgumentParser:
         "benchmark", help="score the pipeline on a fixed suite of cases"
     )
     bm.add_argument(
-        "--suite", default="quick", choices=("quick", "standard", "facemesh")
+        "--suite",
+        default="quick",
+        choices=("quick", "standard", "facemesh", "facemesh-natural"),
     )
     bm.add_argument("--landmarks", default="truth", choices=("truth", "mediapipe"))
     bm.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
