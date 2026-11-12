@@ -190,7 +190,7 @@ def test_calibrator_builds_zones_in_its_units():
 
 
 def test_config_validates_the_gaze_model():
-    assert MonitorConfig().gaze_model == "head"
-    assert MonitorConfig(gaze_model="eye").gaze_model == "eye"
+    assert MonitorConfig().gaze_model == "eye"
+    assert MonitorConfig(gaze_model="head").gaze_model == "head"
     with pytest.raises(ConfigError):
         MonitorConfig(gaze_model="iris")

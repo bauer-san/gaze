@@ -205,8 +205,9 @@ landmarks, so that only this changes (two seeds each, 40 s):
 "Failed" means the calibrator rejected the corners as "too much movement":
 the head was still turning while the operator held the fixation.
 
-With the default head model, commissioning no longer depends on the
-operator keeping their head still. With the eye model it does, and the
+With the head model, commissioning no longer depends on the operator
+keeping their head still, given landmarks that track the eye; see the
+MediaPipe results below for why that is not yet the case. With the eye model it does, and the
 instruction has to be *keep your head still and look with your eyes only*.
 `--calibration-head still` models that operator; the default is natural
 eye–head coordination.
@@ -439,7 +440,7 @@ re-tune after changing the model, never carry settings across.
 ### Results, with perfect landmarks
 
 `standard` suite, 31 cases. The eye model is the iris's offset within the
-eye; the head model, now the default, adds head pose from the depth camera:
+eye; the head model adds head pose from the depth camera:
 
 | | Eye model | Head model |
 | --- | --- | --- |
@@ -485,6 +486,45 @@ and what is left:
   an hour), and in `distance` (90 an hour), where stepping back and forth
   is still read as gaze moving. The distance scaling is a rough
   approximation, and is the next thing to look at.
+
+### Results, with MediaPipe landmarks
+
+The `facemesh` suite, 8 cases rendered and run through MediaPipe, reverses
+that. Commissioned with the head still:
+
+| | Eye model | Head model |
+| --- | --- | --- |
+| Missed warnings | 3 of 21 | 0 of 21 |
+| False alerts per hour | 111 | 74 |
+| In-zone agreement | **77%** | 55% |
+| Gaze error, median | **9.5°** | 20.6° |
+| Time for an alarm to clear, median | **0.9 s** | 5.2 s |
+
+The head model's lack of misses is not a strength: it reads "out of zone"
+so much of the time that nothing gets missed, and its alarms take seconds
+to clear. `facemesh-natural`, the same cases commissioned with natural head
+movement, is worse for both models (in-zone agreement 45% and 42%).
+
+The cause is MediaPipe's iris, not the head pose:
+
+* Head pose from MediaPipe's landmarks is good: against the pose from
+  perfect landmarks, a gain of 0.9–0.97 on each axis and about 1° of noise.
+* The iris offset is not. Against the true eye rotation it moves with about
+  half the expected gain horizontally and about **8%** vertically, with
+  noise worth about 25° of vertical eye rotation.
+* A zone 16° tall is taken mostly with the eyes, whether or not the head is
+  held still, because people do not turn their heads for shifts that small.
+  So the head model's calibrated zone comes out 2–4° tall where it should
+  be about 16°. The eye model escapes this because its calibration rescales
+  to whatever the iris reports.
+* Correcting the iris's gain from the vestibulo-ocular reflex (eyes
+  counter-rotating while the head moves) was tried and does not work: the
+  right correction ranges from 0.4 to 2.2 between faces and lighting.
+
+Whether real eyes do better than rendered ones is the open question, and
+only a recording from the real camera can answer it. Until then `eye` is
+the default. Baselines: `facemesh-mediapipe*.json`,
+`facemesh-natural-mediapipe*.json`.
 
 ## The promo video
 

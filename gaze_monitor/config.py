@@ -88,8 +88,11 @@ class MonitorConfig:
     # when there is no depth. "eye": the iris's offset within the eye alone,
     # which reads a head turn with the eyes held still as no change at all.
     # See gaze_monitor.headpose. A calibration made under one model is not
-    # valid for the other.
-    gaze_model: str = "head"
+    # valid for the other. "eye" is the default until "head" is proven on a
+    # real camera: on rendered faces MediaPipe's iris barely registers
+    # vertical eye rotation, which collapses a head-model zone (see
+    # tools/operator_sim/README.md, "Results, with MediaPipe landmarks").
+    gaze_model: str = "eye"
     filter_alpha: float = 0.12
     # Discard a frame when the two eyes disagree vertically by more than
     # this. Eye movements are conjugate and there is no vertical vergence

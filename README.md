@@ -169,11 +169,14 @@ an operator who looks away by turning their head, eyes centred, barely moves
 it. So the monitor lifts the rigid parts of the face (forehead, nose,
 cheekbones, eye corners) into 3D with the depth image, fits a face model to
 them for the head's orientation, and adds the eye's rotation to get the
-actual line of sight (`gaze_model: head`, the default; see
+actual line of sight (`gaze_model: head`; see
 [`headpose.py`](gaze_monitor/headpose.py)). In the
-[operator simulator](tools/operator_sim/README.md#benchmarking) this missed
-about a third as many real excursions, with about a third of the false
-warnings, of the iris alone.
+[operator simulator](tools/operator_sim/README.md#benchmarking), with perfect
+landmarks, this missed about a third as many real excursions, with about a
+third of the false warnings, of the iris alone. With MediaPipe's landmarks on
+rendered faces it did worse than the iris alone: MediaPipe's iris barely
+follows vertical eye rotation, so the calibrated zone collapses. So `eye`
+stays the default until `head` has been tried on a real camera.
 
 Everything works without depth. Head pose then falls back to FaceMesh's own
 relative depth, which is noisier, and a missing distance reading means
@@ -323,12 +326,11 @@ The reasoning and the numbers behind each step are in the
 7. The person who will run the saw does the calibration, from that same
    working position.
 8. Tell them: **look at each corner and hold still until it is accepted.**
-   With the default head model, turning the head towards a corner is fine:
-   the monitor adds the head's pose to the eyes. With `gaze_model: eye` it
-   is not, because that model measures the eye *within the head*. There,
-   tell them to keep their head still and use their eyes only; in
+   With the default eye model, tell them to **keep their head still and use
+   their eyes only**: the model measures the eye *within the head*, and in
    simulation a head turned during calibration tripled the gaze error and
-   quadrupled the false alarms.
+   quadrupled the false alarms. With `gaze_model: head`, turning the head
+   towards a corner is fine.
 9. Corners in order: top-left, top-right, bottom-left, bottom-right of the
    blade zone. If a corner is rejected ("too much movement"), settle and
    press `c` again.
@@ -414,7 +416,7 @@ The thresholds worth thinking about for a given installation:
 | `clear_after` | 0.4 s | Time back on target before an alarm clears |
 | `fault_after` | 1.0 s | Unusable frames before declaring a sensor fault |
 | `zone_margin` | 0.1 | Tolerance around the calibrated area |
-| `gaze_model` | head | `head`: head pose plus the eye's rotation; `eye`: the iris alone |
+| `gaze_model` | eye | `eye`: the iris alone; `head`: head pose plus the eye's rotation (unproven on real faces) |
 | `max_eye_disparity` | 0.0 (off) | Reject frames where the two eyes disagree |
 | `filter_alpha` | 0.12 | Gaze smoothing — **per frame, not per second** |
 

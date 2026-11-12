@@ -1,0 +1,623 @@
+{
+ "suite": "facemesh-natural",
+ "suite_version": 1,
+ "landmarks": "mediapipe",
+ "params": {
+  "filter_alpha": 0.12,
+  "max_eye_disparity": 0.0,
+  "zone_margin": 0.1,
+  "warn_after": 1.0,
+  "alert_after": 3.0,
+  "clear_after": 0.4,
+  "sample_duration": 1.0,
+  "sigma_threshold": 0.05,
+  "sigma_threshold_deg": 3.0,
+  "gaze_model": "head",
+  "calib_press_after": 1.0
+ },
+ "records": [
+  {
+   "id": "shift-60s-s0-default-typical-natural",
+   "case": {
+    "scenario": "shift",
+    "duration": 60,
+    "seed": 0,
+    "appearance": "default",
+    "traits": "typical",
+    "calibration_head": "natural",
+    "mount_jitter": false
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 3,
+    "detected": 3,
+    "missed": 0,
+    "false_episodes": 2,
+    "false_seconds": 3.333,
+    "latencies_s": [
+     0.867,
+     0.133,
+     -16.433
+    ],
+    "clear_lags_s": [
+     1.033,
+     4.133,
+     2.867
+    ],
+    "minutes": 1.08
+   },
+   "alert": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 2,
+    "false_seconds": 21.533,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 1.08
+   },
+   "tracked": 1.0,
+   "gaze_median_deg": 11.712,
+   "in_zone": 0.5278,
+   "false_out": 0.5025,
+   "eye_in_head": {
+    "frames": 2204,
+    "yaw_resid_rms_deg": 4.057,
+    "yaw_range_deg": [
+     -32.124,
+     36.712
+    ],
+    "yaw_corr": 0.752,
+    "pitch_resid_rms_deg": 4.268,
+    "pitch_range_deg": [
+     -3.525,
+     22.611
+    ],
+    "pitch_corr": 0.245
+   }
+  },
+  {
+   "id": "shift-60s-s1-dark-head_mover-natural-jitter",
+   "case": {
+    "scenario": "shift",
+    "duration": 60,
+    "seed": 1,
+    "appearance": "dark",
+    "traits": "head_mover",
+    "calibration_head": "natural",
+    "mount_jitter": true
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 3,
+    "detected": 3,
+    "missed": 0,
+    "false_episodes": 2,
+    "false_seconds": 4.967,
+    "latencies_s": [
+     0.3,
+     -6.733,
+     -19.4
+    ],
+    "clear_lags_s": [
+     26.667,
+     19.733,
+     7.1
+    ],
+    "minutes": 1.0617
+   },
+   "alert": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 2,
+    "false_seconds": 26.4,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 1.0617
+   },
+   "tracked": 0.9979,
+   "gaze_median_deg": 15.034,
+   "in_zone": 0.4542,
+   "false_out": 0.5704,
+   "eye_in_head": {
+    "frames": 2122,
+    "yaw_resid_rms_deg": 2.509,
+    "yaw_range_deg": [
+     -38.945,
+     24.341
+    ],
+    "yaw_corr": 0.754,
+    "pitch_resid_rms_deg": 4.229,
+    "pitch_range_deg": [
+     -28.055,
+     33.473
+    ],
+    "pitch_corr": 0.458
+   }
+  },
+  {
+   "id": "shift-60s-s2-light-eye_mover-natural",
+   "case": {
+    "scenario": "shift",
+    "duration": 60,
+    "seed": 2,
+    "appearance": "light",
+    "traits": "eye_mover",
+    "calibration_head": "natural",
+    "mount_jitter": false
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 2,
+    "detected": 2,
+    "missed": 0,
+    "false_episodes": 3,
+    "false_seconds": 12.0,
+    "latencies_s": [
+     -11.467,
+     -19.367
+    ],
+    "clear_lags_s": [
+     27.5,
+     19.8
+    ],
+    "minutes": 1.0739
+   },
+   "alert": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 3,
+    "false_seconds": 44.433,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 1.0739
+   },
+   "tracked": 0.9928,
+   "gaze_median_deg": 21.79,
+   "in_zone": 0.1909,
+   "false_out": 0.8524,
+   "eye_in_head": {
+    "frames": 2128,
+    "yaw_resid_rms_deg": 5.29,
+    "yaw_range_deg": [
+     -42.0,
+     25.81
+    ],
+    "yaw_corr": 0.399,
+    "pitch_resid_rms_deg": 3.814,
+    "pitch_range_deg": [
+     -12.789,
+     32.957
+    ],
+    "pitch_corr": 0.591
+   }
+  },
+  {
+   "id": "shift-60s-s3-medium-typical-natural-jitter",
+   "case": {
+    "scenario": "shift",
+    "duration": 60,
+    "seed": 3,
+    "appearance": "medium",
+    "traits": "typical",
+    "calibration_head": "natural",
+    "mount_jitter": true
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 5,
+    "detected": 5,
+    "missed": 0,
+    "false_episodes": 0,
+    "false_seconds": 0.0,
+    "latencies_s": [
+     -2.133,
+     0.067,
+     -3.3,
+     -10.6,
+     -38.167
+    ],
+    "clear_lags_s": [
+     2.1,
+     52.633,
+     48.733,
+     41.967,
+     14.333
+    ],
+    "minutes": 1.0483
+   },
+   "alert": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 2,
+    "false_seconds": 54.133,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 1.0483
+   },
+   "tracked": 1.0,
+   "gaze_median_deg": 86.63,
+   "in_zone": 0.1611,
+   "false_out": 0.946,
+   "eye_in_head": {
+    "frames": 2087,
+    "yaw_resid_rms_deg": 2.904,
+    "yaw_range_deg": [
+     -29.883,
+     36.408
+    ],
+    "yaw_corr": 0.905,
+    "pitch_resid_rms_deg": 4.256,
+    "pitch_range_deg": [
+     -22.527,
+     37.571
+    ],
+    "pitch_corr": 0.741
+   }
+  },
+  {
+   "id": "glances-40s-s0-default-typical-natural",
+   "case": {
+    "scenario": "glances",
+    "duration": 40,
+    "seed": 0,
+    "appearance": "default",
+    "traits": "typical",
+    "calibration_head": "natural",
+    "mount_jitter": false
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 5,
+    "detected": 5,
+    "missed": 0,
+    "false_episodes": 1,
+    "false_seconds": 0.533,
+    "latencies_s": [
+     0.067,
+     0.067,
+     -6.467,
+     -2.533,
+     -0.367
+    ],
+    "clear_lags_s": [
+     0.6,
+     12.9,
+     5.267,
+     0.867,
+     0.0
+    ],
+    "minutes": 0.6833
+   },
+   "alert": {
+    "true_episodes": 1,
+    "detected": 1,
+    "missed": 0,
+    "false_episodes": 1,
+    "false_seconds": 2.467,
+    "latencies_s": [
+     -6.467
+    ],
+    "clear_lags_s": [
+     5.267
+    ],
+    "minutes": 0.6833
+   },
+   "tracked": 0.948,
+   "gaze_median_deg": 20.758,
+   "in_zone": 0.6455,
+   "false_out": 0.497,
+   "eye_in_head": {
+    "frames": 1301,
+    "yaw_resid_rms_deg": 4.999,
+    "yaw_range_deg": [
+     -41.69,
+     42.0
+    ],
+    "yaw_corr": 0.737,
+    "pitch_resid_rms_deg": 5.076,
+    "pitch_range_deg": [
+     -14.568,
+     47.528
+    ],
+    "pitch_corr": 0.637
+   }
+  },
+  {
+   "id": "edges-40s-s0-dark-typical-natural",
+   "case": {
+    "scenario": "edges",
+    "duration": 40,
+    "seed": 0,
+    "appearance": "dark",
+    "traits": "typical",
+    "calibration_head": "natural",
+    "mount_jitter": false
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 3,
+    "detected": 3,
+    "missed": 0,
+    "false_episodes": 0,
+    "false_seconds": 0.0,
+    "latencies_s": [
+     0.667,
+     0.267,
+     -4.1
+    ],
+    "clear_lags_s": [
+     0.067,
+     4.2,
+     0.0
+    ],
+    "minutes": 0.6856
+   },
+   "alert": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 1,
+    "false_seconds": 3.667,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 0.6856
+   },
+   "tracked": 1.0,
+   "gaze_median_deg": 5.523,
+   "in_zone": 0.9028,
+   "false_out": 0.091,
+   "eye_in_head": {
+    "frames": 1564,
+    "yaw_resid_rms_deg": 2.166,
+    "yaw_range_deg": [
+     -18.243,
+     21.43
+    ],
+    "yaw_corr": 0.891,
+    "pitch_resid_rms_deg": 4.009,
+    "pitch_range_deg": [
+     -3.799,
+     26.713
+    ],
+    "pitch_corr": 0.638
+   }
+  },
+  {
+   "id": "flicker-30s-s0-light-typical-natural",
+   "case": {
+    "scenario": "flicker",
+    "duration": 30,
+    "seed": 0,
+    "appearance": "light",
+    "traits": "typical",
+    "calibration_head": "natural",
+    "mount_jitter": false
+   },
+   "calibrated": false
+  },
+  {
+   "id": "vor-20s-s0-default-typical-natural",
+   "case": {
+    "scenario": "vor",
+    "duration": 20,
+    "seed": 0,
+    "appearance": "default",
+    "traits": "typical",
+    "calibration_head": "natural",
+    "mount_jitter": false
+   },
+   "calibrated": true,
+   "warning": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 4,
+    "false_seconds": 14.5,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 0.3333
+   },
+   "alert": {
+    "true_episodes": 0,
+    "detected": 0,
+    "missed": 0,
+    "false_episodes": 4,
+    "false_seconds": 6.5,
+    "latencies_s": [],
+    "clear_lags_s": [],
+    "minutes": 0.3333
+   },
+   "tracked": 1.0,
+   "gaze_median_deg": 21.61,
+   "in_zone": 0.235,
+   "false_out": 0.765,
+   "eye_in_head": {
+    "frames": 955,
+    "yaw_resid_rms_deg": 7.199,
+    "yaw_range_deg": [
+     -18.94,
+     19.169
+    ],
+    "yaw_corr": 0.052,
+    "pitch_resid_rms_deg": 5.679,
+    "pitch_range_deg": [
+     -0.031,
+     22.6
+    ],
+    "pitch_corr": 0.305
+   }
+  }
+ ],
+ "scorecard": {
+  "cases": 8,
+  "calibration_failures": 1,
+  "calibration_failed_ids": [
+   "flicker-30s-s0-light-typical-natural"
+  ],
+  "missed_warnings": {
+   "missed": 0,
+   "of": 21,
+   "rate": {
+    "value": 0.0,
+    "ci90": [
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "false_warnings_per_hour": {
+   "value": 120.682,
+   "ci90": [
+    60.714,
+    212.743
+   ]
+  },
+  "missed_alerts": {
+   "missed": 0,
+   "of": 1,
+   "rate": {
+    "value": 0.0,
+    "ci90": [
+     0.0,
+     0.0
+    ]
+   }
+  },
+  "false_alerts_per_hour": {
+   "value": 150.852,
+   "ci90": [
+    104.882,
+    234.083
+   ]
+  },
+  "warning_latency_s": {
+   "median": -2.533,
+   "p90": 0.3,
+   "n": 21
+  },
+  "time_to_clear_s": {
+   "median": 5.267,
+   "p90": 41.967,
+   "n": 21
+  },
+  "tracked_mean": {
+   "value": 0.991,
+   "ci90": [
+    0.977,
+    0.999
+   ]
+  },
+  "in_zone_mean": {
+   "value": 0.445,
+   "ci90": [
+    0.295,
+    0.61
+   ]
+  },
+  "gaze_median_deg_mean": {
+   "value": 26.151,
+   "ci90": [
+    13.68,
+    45.523
+   ]
+  },
+  "by_scenario": {
+   "edges": {
+    "cases": 1,
+    "missed_warnings": "0/3",
+    "false_warnings_per_hour": 0.0,
+    "in_zone_mean": 0.903
+   },
+   "glances": {
+    "cases": 1,
+    "missed_warnings": "0/5",
+    "false_warnings_per_hour": 87.809,
+    "in_zone_mean": 0.645
+   },
+   "shift": {
+    "cases": 4,
+    "missed_warnings": "0/13",
+    "false_warnings_per_hour": 98.501,
+    "in_zone_mean": 0.334
+   },
+   "vor": {
+    "cases": 1,
+    "missed_warnings": "0/0",
+    "false_warnings_per_hour": 720.072,
+    "in_zone_mean": 0.235
+   }
+  },
+  "by_traits": {
+   "eye_mover": {
+    "cases": 1,
+    "missed_warnings": "0/2",
+    "false_warnings_per_hour": 167.613,
+    "in_zone_mean": 0.191
+   },
+   "head_mover": {
+    "cases": 1,
+    "missed_warnings": "0/3",
+    "false_warnings_per_hour": 113.026,
+    "in_zone_mean": 0.454
+   },
+   "typical": {
+    "cases": 5,
+    "missed_warnings": "0/16",
+    "false_warnings_per_hour": 109.646,
+    "in_zone_mean": 0.494
+   }
+  },
+  "by_commissioning": {
+   "natural": {
+    "cases": 7,
+    "missed_warnings": "0/21",
+    "false_warnings_per_hour": 120.682,
+    "in_zone_mean": 0.445
+   }
+  },
+  "by_appearance": {
+   "dark": {
+    "cases": 2,
+    "missed_warnings": "0/6",
+    "false_warnings_per_hour": 68.677,
+    "in_zone_mean": 0.678
+   },
+   "default": {
+    "cases": 3,
+    "missed_warnings": "0/8",
+    "false_warnings_per_hour": 200.324,
+    "in_zone_mean": 0.469
+   },
+   "light": {
+    "cases": 1,
+    "missed_warnings": "0/2",
+    "false_warnings_per_hour": 167.613,
+    "in_zone_mean": 0.191
+   },
+   "medium": {
+    "cases": 1,
+    "missed_warnings": "0/5",
+    "false_warnings_per_hour": 0.0,
+    "in_zone_mean": 0.161
+   }
+  },
+  "by_mount": {
+   "False": {
+    "cases": 5,
+    "missed_warnings": "0/13",
+    "false_warnings_per_hour": 155.598,
+    "in_zone_mean": 0.5
+   },
+   "True": {
+    "cases": 2,
+    "missed_warnings": "0/8",
+    "false_warnings_per_hour": 56.872,
+    "in_zone_mean": 0.308
+   }
+  }
+ }
+}
