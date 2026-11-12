@@ -147,6 +147,24 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--seed", type=int, default=0)
     dr.add_argument("--camera", type=_xyz, metavar="X,Y,Z", help="where it was set up")
 
+    bm = sub.add_parser(
+        "benchmark", help="score the pipeline on a fixed suite of cases"
+    )
+    bm.add_argument(
+        "--suite", default="quick", choices=("quick", "standard", "facemesh")
+    )
+    bm.add_argument("--landmarks", default="truth", choices=("truth", "mediapipe"))
+    bm.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
+                    help="override a tuning parameter for this run")  # fmt: skip
+    bm.add_argument("--out", type=pathlib.Path, help="save per-case results (JSON)")
+    bm.add_argument("--baseline", type=pathlib.Path,
+                    help="compare, paired, with results saved by --out")  # fmt: skip
+    bm.add_argument("--cache", type=pathlib.Path,
+                    default=pathlib.Path("runs/bench-cache"),
+                    help="where rendered cases are kept (mediapipe tier)")  # fmt: skip
+    bm.add_argument("--no-render", action="store_true",
+                    help="fail instead of rendering an uncached case")  # fmt: skip
+
     pr = sub.add_parser("promo", help="render the promotional video")
     pr.add_argument(
         "--out",
@@ -242,6 +260,40 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "placement":
         return _placement(args)
+
+    if args.command == "benchmark":
+        import dataclasses
+
+        from . import benchmark as B
+        from .evaluate import Params
+
+        params = dataclasses.replace(Params(), **_overrides(args.set))
+        cases = B.suite(args.suite)
+        records = B.run_suite(
+            cases, params, args.landmarks, args.cache, render=not args.no_render
+        )
+        card = B.scorecard(records)
+        print(f"suite {args.suite} ({args.landmarks} landmarks)")
+        print(B.format_scorecard(card))
+        if args.baseline:
+            base = json.loads(args.baseline.read_text())["records"]
+            print()
+            print(B.format_comparison(B.compare(base, records)))
+        if args.out:
+            args.out.write_text(
+                json.dumps(
+                    {
+                        "suite": args.suite,
+                        "suite_version": B.SUITE_VERSION,
+                        "landmarks": args.landmarks,
+                        "params": dataclasses.asdict(params),
+                        "records": records,
+                        "scorecard": card,
+                    },
+                    indent=1,
+                )
+            )
+        return 0
 
     if args.command == "promo":
         from .promo import render_promo

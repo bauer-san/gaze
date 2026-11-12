@@ -868,6 +868,48 @@ def glances_segments(duration: float, rng: np.random.Generator) -> list[Segment]
     return segs
 
 
+def edges_segments(duration: float, rng: np.random.Generator) -> list[Segment]:
+    """Fixations just inside and just outside each edge of the zone.
+
+    Inside points are 15% of the zone in from an edge; outside points are
+    35% beyond it, clear of the monitor's default 10% margin. Each is held
+    long enough to warn if it is out. This is where a few degrees of error
+    turn into a missed alarm or a false one.
+    """
+    inside = ["zone:0.15,0.5", "zone:0.85,0.5", "zone:0.5,0.15", "zone:0.5,0.85"]
+    outside = ["zone:-0.35,0.5", "zone:1.35,0.5", "zone:0.5,-0.35", "zone:0.5,1.35"]
+    pool = [(t, "edge:in") for t in inside] + [(t, "edge:out") for t in outside]
+    segs = []
+    t = 0.0
+    while t < duration:
+        target, act = pool[int(rng.integers(len(pool)))]
+        segs.append(Segment("cut", 2.0, scan=0.02, activity="watch_cut"))
+        d = float(rng.uniform(2.0, 3.0))
+        segs.append(Segment(target, d, activity=act))
+        t += 2.0 + d
+    return segs
+
+
+def flicker_segments(duration: float, rng: np.random.Generator) -> list[Segment]:
+    """Short glances away, each under the 1 s grace period, in quick succession.
+
+    No single glance should warn. A monitor whose away timer does not reset
+    cleanly, or whose filter smears the glances together, will.
+    """
+    segs = []
+    t = 0.0
+    away = ["tray", "product", "controls"]
+    while t < duration:
+        back = float(rng.uniform(0.7, 1.2))
+        glance = float(rng.uniform(0.3, 0.5))
+        segs.append(Segment("cut", back, activity="watch_cut"))
+        segs.append(
+            Segment(away[int(rng.integers(len(away)))], glance, activity="flicker")
+        )
+        t += back + glance
+    return segs
+
+
 SCENARIOS = {
     "shift": "A realistic stretch of work, generated from the task model",
     "fixation": "Head still, staring at the cut: the noise floor",
@@ -876,6 +918,8 @@ SCENARIOS = {
     "eyes-only": "Head still; eyes alone move between targets in and out of the zone",
     "distance": "Watching the cut while stepping back and forth",
     "glances": "Timed glances away, for alarm latency",
+    "edges": "Looks just inside and just outside each edge of the zone",
+    "flicker": "Rapid short glances away and back, each under the grace period",
 }
 
 
@@ -895,6 +939,8 @@ def build_segments(
         "eyes-only": lambda: eyes_only_segments(duration, rng),
         "distance": lambda: distance_segments(duration),
         "glances": lambda: glances_segments(duration, rng),
+        "edges": lambda: edges_segments(duration, rng),
+        "flicker": lambda: flicker_segments(duration, rng),
     }
     if name not in builders:
         raise ValueError(

@@ -113,6 +113,8 @@ def generate(
     calibration_head: str = "natural",
     camera: tuple | None = None,
     aim: tuple | None = None,
+    traits=None,
+    scene=None,
     workers: int = 0,
     ssaa: int = 2,
     video: bool = False,
@@ -138,6 +140,10 @@ def generate(
         camera=camera,
         aim=aim,
     )
+    if traits is not None:
+        config["traits"] = traits
+    if scene is not None:
+        config["scene"] = scene
     sim = Simulation(**config)
     n = sim.frame_count
     w, h = sim.renderer.width, sim.renderer.height
@@ -721,12 +727,15 @@ def events(t: np.ndarray, oracle: np.ndarray, pred: np.ndarray, fps: float) -> d
         o_eps = _episodes(o)
         p_eps = _episodes(p)
         tol = int(round(1.0 * fps))
-        detected, latencies = 0, []
+        detected, latencies, clears = 0, [], []
         for a, b in o_eps:
-            hits = [pa for pa, pb in p_eps if pb >= a - tol and pa <= b + tol]
+            hits = [(pa, pb) for pa, pb in p_eps if pb >= a - tol and pa <= b + tol]
             if hits:
                 detected += 1
-                latencies.append((hits[0] - a) / fps)
+                latencies.append((hits[0][0] - a) / fps)
+                # How long the alarm outlasted the real excursion: the time
+                # to clear once the operator is looking back.
+                clears.append((max(pb for _, pb in hits) - b) / fps)
         false = [
             (a, b)
             for a, b in p_eps
@@ -741,6 +750,11 @@ def events(t: np.ndarray, oracle: np.ndarray, pred: np.ndarray, fps: float) -> d
             "false_episodes": len(false),
             "false_per_min": _r(len(false) / minutes) if minutes > 0 else None,
             "false_seconds": _r(sum(b - a + 1 for a, b in false) / fps),
+            "clear_lag_median_s": _r(np.median(clears)) if clears else None,
+            # Raw per-episode values, so a benchmark can pool across runs.
+            "latencies_s": [_r(x) for x in latencies],
+            "clear_lags_s": [_r(x) for x in clears],
+            "minutes": _r(minutes, 4),
         }
     return out
 

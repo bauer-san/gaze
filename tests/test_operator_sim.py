@@ -292,3 +292,78 @@ def test_calibration_tolerates_a_mount_that_creeps():
     base = rows["none"]["gaze_median_deg"]
     assert abs(rows["tips"]["gaze_median_deg"] - base) < 0.3
     assert abs(rows["sags"]["gaze_median_deg"] - base) < 0.8
+
+
+# -- benchmark -------------------------------------------------------------------
+
+
+def test_benchmark_cases_are_stable():
+    """Case ids and cache keys must not drift, or baselines stop pairing."""
+    from tools.operator_sim import benchmark as B
+
+    quick = B.suite("quick")
+    assert len(quick) == len({c.id for c in quick})
+    assert quick[0].key() == B.Case("shift", 40, 0).key()
+    assert B.Case("shift", 40, 0).key() != B.Case("shift", 40, 1).key()
+    # Mount jitter is seeded, so a case renders the same camera every time.
+    c = B.Case("shift", 40, 5, mount_jitter=True)
+    assert c.scene().mount.position == c.scene().mount.position
+
+
+def test_stress_scenarios_build():
+    for name in ("edges", "flicker"):
+        segs = build_segments(name, 20.0, seed=0, calibrate=False)
+        assert sum(s.duration for s in segs) >= 20.0
+
+
+def _record(missed, true, false, minutes, in_zone, cid):
+    level = {
+        "true_episodes": true, "detected": true - missed, "missed": missed,
+        "false_episodes": false, "false_seconds": 0.0, "latencies_s": [0.1],
+        "clear_lags_s": [1.0], "minutes": minutes,
+    }  # fmt: skip
+    return {
+        "id": cid,
+        "case": {"scenario": "shift", "traits": "typical", "calibration_head": "still",
+                 "appearance": "default", "mount_jitter": False},  # fmt: skip
+        "calibrated": True,
+        "warning": dict(level),
+        "alert": dict(level),
+        "tracked": 1.0,
+        "gaze_median_deg": 5.0,
+        "in_zone": in_zone,
+    }
+
+
+def test_scorecard_pools_over_cases():
+    from tools.operator_sim import benchmark as B
+
+    recs = [_record(1, 4, 2, 1.0, 0.8, "a"), _record(0, 6, 0, 2.0, 0.9, "b")]
+    card = B.scorecard(recs)
+    assert card["missed_warnings"]["missed"] == 1
+    assert card["missed_warnings"]["of"] == 10
+    assert card["missed_warnings"]["rate"]["value"] == pytest.approx(0.1)
+    # Pooled: 2 false episodes over 3 minutes is 40 an hour.
+    assert card["false_warnings_per_hour"]["value"] == pytest.approx(40.0)
+    lo, hi = card["false_warnings_per_hour"]["ci90"]
+    assert lo <= 40.0 <= hi
+
+
+def test_comparison_of_identical_runs_is_zero():
+    from tools.operator_sim import benchmark as B
+
+    recs = [_record(1, 4, 2, 1.0, 0.8, "a"), _record(0, 6, 0, 2.0, 0.9, "b")]
+    cmp = B.compare(recs, recs)
+    assert cmp["paired_cases"] == 2
+    assert cmp["missed_warnings"]["mean_diff"] == 0
+    assert cmp["false_warnings_per_hour"]["mean_diff"] == 0
+
+
+def test_benchmark_runs_and_is_deterministic():
+    from tools.operator_sim import benchmark as B
+
+    cases = [B.Case("glances", 15, 0), B.Case("flicker", 10, 0, mount_jitter=True)]
+    a = B.run_suite(cases, progress=False)
+    b = B.run_suite(cases, progress=False)
+    assert a == b
+    assert all(r["calibrated"] for r in a)

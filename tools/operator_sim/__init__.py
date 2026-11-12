@@ -18,6 +18,9 @@ See tools/operator_sim/README.md. The modules:
 ``sim``            Scenario in, frames and ground truth out
 ``evaluate``       Generate runs, replay the real pipeline, score, sweep
 ``source``         A camera the real monitor can open
+``placement``      Where to mount the camera, and how far it may drift
+``benchmark``      A fixed suite of cases and a scorecard, for comparing changes
+``promo``          The promotional video
 =================  ==========================================================
 
 Only numpy is needed to render. FaceMesh (``generate``) needs mediapipe and

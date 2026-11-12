@@ -366,6 +366,101 @@ that run is a single 12 s stretch of watching the cut read as out of zone.
   head still. Head pose is the obvious next input, and the simulator's
   `head_*_deg` truth is there to fit it against.
 
+## Benchmarking
+
+One simulated run is not evidence: where the four-corner calibration happens
+to land moves the result more than most changes do. `benchmark` scores the
+pipeline on a fixed, versioned suite of cases that varies what it has to be
+robust to, and pools the result into a scorecard with 90% intervals from
+resampling the cases:
+
+* the operator's looks and height (the four appearance presets);
+* how they move their head: `typical`, a `head_mover` who turns the head
+  for small shifts, and an `eye_mover` who barely does;
+* how they commission: head still, as the checklist asks, or naturally;
+* the camera's exact mount: up to 15 mm and 3° from the recommended one;
+* the scenario, including two stress cases: `edges`, fixations just inside
+  and just outside each edge of the zone, and `flicker`, rapid glances away
+  that are each shorter than the grace period;
+* the random seed.
+
+The scorecard leads with what matters at the saw: **missed alarms** (real
+excursions that never escalated) and **false alarms per hour**, then
+latency, time to clear, tracking, and the gaze error behind them, broken
+down by scenario, operator type, commissioning, appearance and mount.
+
+```bash
+python -m tools.operator_sim benchmark --suite quick              # 30 s, perfect landmarks
+python -m tools.operator_sim benchmark --suite standard --out new.json
+python -m tools.operator_sim benchmark --suite standard \
+    --baseline tools/operator_sim/baselines/standard-truth.json   # paired comparison
+python -m tools.operator_sim benchmark --suite standard --set filter_alpha=0.2
+python -m tools.operator_sim benchmark --suite facemesh --landmarks mediapipe
+```
+
+| Suite | Cases | Landmarks | Time |
+| --- | --- | --- | --- |
+| `quick` | 8 | perfect | about 30 s |
+| `standard` | 31 | perfect | about 2 min |
+| `facemesh` | 8 | FaceMesh on rendered frames | about an hour the first time, cached after |
+
+The perfect-landmark tier tests the gaze model, calibration and policy with
+the detector taken out. The FaceMesh tier renders each case once into
+`--cache`, and every later run replays the cached landmarks, so a change
+downstream of FaceMesh costs seconds to evaluate there too.
+
+**Comparisons are paired.** `--baseline` scores the same cases and reports,
+for each metric, the mean per-case difference and its 90% interval. Only a
+difference whose interval excludes zero (marked `*`) is worth believing.
+The baselines in [`baselines/`](baselines/) are the pipeline as it is on
+`main`. Re-running unchanged code reproduces them exactly. As a check that
+the benchmark can see a change, a faster filter (`--set filter_alpha=0.3`
+against the default 0.12) adds 33 false warnings an hour [+10, +60] and
+changes nothing else beyond noise.
+
+### The baseline, with perfect landmarks
+
+`standard` suite, the pipeline as it is on `main`:
+
+| | |
+| --- | --- |
+| Missed warnings | 20 of 72 (28%, 90% interval 16–42%) |
+| Missed alerts | 2 of 6 |
+| False warnings per hour | 61 (36–90) |
+| In-zone agreement | 82% |
+| Did not calibrate | 2 of 31, both commissioned naturally |
+
+| Operator | Missed warnings | False warnings/hour |
+| --- | --- | --- |
+| `eye_mover` | 2 of 22 | 33 |
+| `typical` | 5 of 27 | 72 |
+| `head_mover` | **13 of 23** | 67 |
+
+| Scenario | Missed warnings | False warnings/hour |
+| --- | --- | --- |
+| `edges` | 10 of 17 | 22 |
+| `flicker` | none to miss | **275** |
+| `glances` | 3 of 20 | 22 |
+| `shift` | 7 of 35 | 48 |
+| `distance` | none to miss | 120 |
+| `vor` | none to miss | 0 |
+
+All of this is with a perfect landmark detector, so none of it is FaceMesh's
+fault. Three things stand out:
+
+* **Operators who look away with their head are missed.** A head mover
+  looks away by turning the head, with the eyes staying near the middle of
+  the head; eye-in-head barely changes, so the monitor believes they are
+  still on the blade. More than half their excursions went unnoticed. This
+  is the safety-critical failure, and the case for head-pose compensation.
+* **Rapid short glances become false alarms.** Each glance in `flicker` is
+  under the grace period and the oracle never warns, but the filter's lag
+  and the 0.4 s it takes to clear smear them into one long absence.
+* **Near the zone's edge, a few degrees of error decide it.** In `edges`,
+  10 of 17 excursions just outside the zone were read as inside.
+
+Mount jitter made no measurable difference, consistent with the drift study.
+
 ## The promo video
 
 ```bash
