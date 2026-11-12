@@ -15,6 +15,18 @@ looking, and escalates when their gaze leaves that region:
 | `ALERT` | Gaze has been outside it for `alert_after` seconds |
 | `FAULT` | The camera has stopped producing usable frames |
 
+## See it
+
+[![A simulated operator at the saw, with the monitor's view of where they are looking](docs/media/operator-promo.jpg)](docs/media/operator-promo.mp4)
+
+**[Watch the video](docs/media/operator-promo.mp4)** (1080p), or the
+[small version](docs/media/operator-promo-sms.mp4) for sending in a text
+message. It is rendered by the [operator simulator](tools/operator_sim/README.md):
+a simulated operator commissions the monitor and then works at the saw. The
+status badge is not scripted. It is the real pipeline (FaceMesh, the gaze
+measurement, calibration and the state machine) running on the simulated
+face camera's frames.
+
 ## What this is not
 
 **This is an attention aid, not a machine guard.** It has no guaranteed
@@ -121,6 +133,24 @@ signal only when the signal barely moves between samples:
 | --- | --- | --- |
 | fixation | Sit still, head level, stare at one fixed point | The noise floor, and a `max_eye_disparity` to use |
 | roll | Keep staring at that point, tilt your head slowly left and right | Whether head posture is leaking into the reading |
+
+### Simulating it
+
+[`tools/operator_sim`](tools/operator_sim/README.md) is a rendered operator
+at the saw, seen by a simulated D435i on the saw head. The operator has
+eyes that move independently of the head, eyelids that blink and follow
+gaze, and realistic eye–head coordination. Every frame comes with ground
+truth: the true line of sight, eye-in-head rotation, head pose and landmark
+positions. It replays the real pipeline on the frames and scores alarms,
+latency and gaze error against an oracle. It also separates FaceMesh's error
+from the gaze model's, and sweeps the tuning parameters on identical
+frames.
+
+```
+python -m tools.operator_sim generate --scenario shift --out runs/shift
+python -m tools.operator_sim evaluate runs/shift
+python -m tools.operator_sim sweep runs/shift --grid filter_alpha=0.08,0.12,0.2
+```
 
 ## Why a depth camera
 

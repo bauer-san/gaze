@@ -18,6 +18,8 @@ calibration.json
 # in .github/workflows/ci.yml, whose path list mirrors this file.
 *.md
 **/*.md
+# The promo video and its poster. Megabytes nothing in the image reads.
+docs/media
 docker-compose.yml
 dev-requirements.txt
 .flake8
