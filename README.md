@@ -273,6 +273,68 @@ whole procedure also works from a terminal.
 | `r` | Start over |
 | `q` / `Esc` | Quit |
 
+### Commissioning checklist
+
+The reasoning and the numbers behind each step are in the
+[operator simulator's README](tools/operator_sim/README.md#where-to-put-the-camera).
+
+**Mount the camera**
+
+1. On the front-left corner of the upper wheel housing, as the operator
+   sees it: camera centre about **53.7 in** from the floor, about **2 in**
+   to the operator's left of the blade, about **¾ in** in front of the
+   housing's front face, aimed at the bridge of the operator's nose.
+2. The camera body must stay **above the housing's underside**. That edge
+   is the saw's maximum cut height, and product passes beneath it.
+3. With the suction mount: clean, dry, degreased flat stainless, the cup's
+   edge clear of the housing's corner. **Tether the camera** to a fixed
+   point on the housing, so the cup is not the only thing holding it above
+   the blade.
+4. **Clearance check:** lower the blade guide all the way, then slide the
+   tallest product the saw takes under the housing. The camera must clear
+   both.
+
+**Check the framing**
+
+5. Have the operator stand where they work: close in, the front of their
+   body a hand's width behind the carriage's hand rail, leaning over to
+   the cut. Do not frame for someone standing back.
+6. With the live preview running (`--preview-port`), check that the whole
+   face, chin to forehead, is in the picture with some margin, and that
+   both irises are tracked while they watch the blade. At this range the
+   face nearly fills the frame, so a few degrees of aim matter.
+
+**Calibrate**
+
+7. The person who will run the saw does the calibration, from that same
+   working position.
+8. Tell them: **keep your head still, and look at each corner with your
+   eyes only.** This matters as much as anything else on this list. From
+   the working position the zone's near corners are well off to the side,
+   people naturally turn their head towards them, and the monitor measures
+   the eye *within the head*. In simulation, a head turned during
+   calibration tripled the gaze error and quadrupled the false alarms.
+9. Corners in order: top-left, top-right, bottom-left, bottom-right of the
+   blade zone. If a corner is rejected ("too much movement"), settle and
+   press `c` again.
+
+**Verify**
+
+10. Watch the blade: the state should be ATTENTIVE. Glance away and back
+    in under a second: it should stay ATTENTIVE. Look away for a few
+    seconds: WARNING after 1 s, ALERT after 3 s. Look back: it clears.
+
+**Recalibrate when**
+
+- the camera is re-aimed, remounted, or knocked. A small sag in the mount
+  does not need it; anything that changes the framing does;
+- a different operator takes over. Whether one calibration serves people
+  of different heights has not been measured yet, so assume it does not;
+- the guide or the zone the operator must watch changes.
+
+**Every shift:** with a suction mount, check its vacuum indicator at
+start-up and after each washdown.
+
 ### Over ssh
 
 An installed unit has no display, and neither does an ssh session. `--tui`
