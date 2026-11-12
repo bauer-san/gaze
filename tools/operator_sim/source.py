@@ -38,6 +38,7 @@ class _Frame:
 
     color: np.ndarray
     depth_m: np.ndarray | None = None
+    intrinsics: object | None = None
 
     @property
     def size(self) -> tuple[int, int]:
@@ -72,6 +73,7 @@ class SimulatedCamera:
         self._truth = None
         self._t0 = None
         self._fps = float(sim_kwargs.get("fps", 30.0))
+        self._intrinsics = None
         self._n = 0
         self._Frame = _frame_class()
 
@@ -87,12 +89,14 @@ class SimulatedCamera:
             self._fps = float(meta["config"]["fps"])
             self._n = int(meta["frames"])
             self._truth = (self.run_dir / "truth.jsonl").read_text().splitlines()
+            self._intrinsics = _intrinsics(meta.get("intrinsics"))
             self._t0 = time.monotonic()
         else:
             from .sim import Simulation
 
             self._sim = Simulation(**self.sim_kwargs)
             self._n = self._sim.frame_count
+            self._intrinsics = _intrinsics(self._sim.intrinsics)
 
     def read(self):
         if self.run_dir is not None:
@@ -103,7 +107,11 @@ class SimulatedCamera:
             return None
         frame = self._sim.next_frame()
         self.last_truth = frame.truth
-        return self._Frame(color=frame.render.color, depth_m=frame.render.depth_m)
+        return self._Frame(
+            color=frame.render.color,
+            depth_m=frame.render.depth_m,
+            intrinsics=self._intrinsics,
+        )
 
     def _playback(self):
         import cv2
@@ -128,7 +136,11 @@ class SimulatedCamera:
         if color is None or depth is None:
             return None
         self.last_truth = json.loads(self._truth[idx])
-        return self._Frame(color=color, depth_m=depth.astype(np.float32) / 1000.0)
+        return self._Frame(
+            color=color,
+            depth_m=depth.astype(np.float32) / 1000.0,
+            intrinsics=self._intrinsics,
+        )
 
     def stop(self) -> None:
         self._sim = None
@@ -140,6 +152,14 @@ class SimulatedCamera:
 
     def __exit__(self, *exc) -> None:
         self.stop()
+
+
+def _intrinsics(k):
+    if not k:
+        return None
+    from gaze_monitor.headpose import Intrinsics
+
+    return Intrinsics(k["fx"], k["fy"], k["cx"], k["cy"])
 
 
 def run_live(

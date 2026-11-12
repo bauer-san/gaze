@@ -40,6 +40,10 @@ PREVIEW_BACKGROUNDS = ("black", "camera")
 # gaze_monitor.overlay, as a literal for the same reason as the tuples above.
 PREVIEW_GAZE_MODES = ("fused", "raw", "both")
 
+# gaze_monitor.gaze.GAZE_MODELS, as a literal so that config stays importable
+# without numpy.
+GAZE_MODELS = ("head", "eye")
+
 
 class ConfigError(ValueError):
     """The supplied configuration cannot produce a working monitor."""
@@ -78,6 +82,14 @@ class MonitorConfig:
     debug: bool = False
 
     # -- gaze --
+    # "head": gaze is the head's pose plus the eye's rotation in the head,
+    # the actual line of sight. Head pose comes from the face's landmarks
+    # lifted to 3D with the depth camera, or from FaceMesh's relative depth
+    # when there is no depth. "eye": the iris's offset within the eye alone,
+    # which reads a head turn with the eyes held still as no change at all.
+    # See gaze_monitor.headpose. A calibration made under one model is not
+    # valid for the other.
+    gaze_model: str = "head"
     filter_alpha: float = 0.12
     # Discard a frame when the two eyes disagree vertically by more than
     # this. Eye movements are conjugate and there is no vertical vergence
@@ -206,7 +218,10 @@ class MonitorConfig:
 
     # -- calibration --
     sample_duration: float = 1.0
+    # Reject a corner fixation that wobbles more than this: in eye-width
+    # units for the "eye" model, degrees for "head".
     sigma_threshold: float = 0.05
+    sigma_threshold_deg: float = 3.0
     calibration_file: pathlib.Path = field(default_factory=default_calibration_path)
 
     def __post_init__(self) -> None:
@@ -220,6 +235,13 @@ class MonitorConfig:
 
         if self.max_eye_disparity < 0:
             raise ConfigError("max_eye_disparity must be >= 0")
+        if self.gaze_model not in GAZE_MODELS:
+            raise ConfigError(
+                f"gaze_model must be one of {', '.join(GAZE_MODELS)}, "
+                f"got {self.gaze_model!r}"
+            )
+        if self.sigma_threshold_deg <= 0:
+            raise ConfigError("sigma_threshold_deg must be > 0")
         if not 0.0 < self.filter_alpha <= 1.0:
             raise ConfigError(
                 f"filter_alpha must be in (0, 1], got {self.filter_alpha}"

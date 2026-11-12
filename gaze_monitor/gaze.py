@@ -8,6 +8,7 @@ frame came from a RealSense, a Kinect or a plain webcam.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from dataclasses import dataclass
 
@@ -66,6 +67,10 @@ WIDTH_ALPHA = 0.05
 # 16:9 than on 4:3. Working in pixels makes that class of mistake impossible.
 MIN_EYE_WIDTH_PX = 1.0
 
+# "eye": gaze is the iris's offset within the eye. "head": gaze is head pose
+# plus that offset, the line of sight in the camera frame. See headpose.py.
+GAZE_MODELS = ("eye", "head")
+
 
 @dataclass(frozen=True)
 class EyeMeasurement:
@@ -97,6 +102,17 @@ class GazeSample:
     # operator. Large values mean this frame should not be trusted: a blink
     # halfway through, an occluded eye, a head angle too steep for one iris.
     disparity: float = 0.0
+    # Units of dx and dy. "eye": the iris's offset within the eye, in
+    # fractions of the eye's width (gaze model "eye"). "deg": the line of
+    # sight in the camera frame, yaw and pitch in degrees, head pose
+    # included (gaze model "head").
+    units: str = "eye"
+    # The eye-in-head offset the sample was built from, and the head pose,
+    # for diagnostics. Present in "deg" samples only.
+    eye_dx: float | None = None
+    eye_dy: float | None = None
+    head_deg: tuple[float, float, float] | None = None
+    head_method: str | None = None
 
 
 class GazeFilter:
@@ -319,7 +335,10 @@ class GazeMeasurer:
     further away.
     """
 
-    def __init__(self, width_alpha: float = WIDTH_ALPHA) -> None:
+    def __init__(self, width_alpha: float = WIDTH_ALPHA, model: str = "eye") -> None:
+        if model not in GAZE_MODELS:
+            raise ValueError(f"model must be one of {GAZE_MODELS}, got {model!r}")
+        self.model = model
         self._widths = tuple(GazeFilter(alpha=width_alpha) for _ in EYES)
 
     def reset(self) -> None:
@@ -328,7 +347,13 @@ class GazeMeasurer:
             f.reset()
 
     def measure(
-        self, face_landmarks, w: int, h: int, depth_m: np.ndarray | None = None
+        self,
+        face_landmarks,
+        w: int,
+        h: int,
+        depth_m: np.ndarray | None = None,
+        intrinsics=None,
+        landmark_depth: np.ndarray | None = None,
     ) -> GazeSample | None:
         """Average both eyes into one gaze sample, or ``None`` if unmeasurable.
 
@@ -336,6 +361,13 @@ class GazeMeasurer:
         is in near-profile, where the iris offset no longer tracks gaze
         direction, and reporting it as a confident sample is worse than
         reporting nothing.
+
+        With the ``head`` model, the eyes' offset is combined with the head
+        pose (see :mod:`gaze_monitor.headpose`) into the line of sight, in
+        degrees. Head pose uses depth when it has ``intrinsics`` and either
+        the depth image or ``landmark_depth`` (the depth at each landmark,
+        if the caller already has it), and FaceMesh's relative depth
+        otherwise.
         """
         eyes = []
         for (iris, a_idx, b_idx, ring), width in zip(EYES, self._widths, strict=True):
@@ -361,18 +393,62 @@ class GazeMeasurer:
 
         px = (left.px + right.px) // 2
         py = (left.py + right.py) // 2
-        return GazeSample(
-            # The version component: the eyes' shared rotation, which is the
-            # gaze direction. Averaging also cancels vergence, the one real
-            # difference between the two eyes, which is why it is the right
-            # operation and not merely a convenient one.
-            dx=(left.dx + right.dx) / 2.0,
-            dy=(left.dy + right.dy) / 2.0,
-            z_m=depth_at(depth_m, px, py),
+        # The version component: the eyes' shared rotation, which is the
+        # gaze direction. Averaging also cancels vergence, the one real
+        # difference between the two eyes, which is why it is the right
+        # operation and not merely a convenient one.
+        dx = (left.dx + right.dx) / 2.0
+        dy = (left.dy + right.dy) / 2.0
+        if landmark_depth is not None:
+            z_m = _median_depth(landmark_depth, (168, 6, 197))
+        else:
+            z_m = depth_at(depth_m, px, py)
+        sample = GazeSample(
+            dx=dx,
+            dy=dy,
+            z_m=z_m,
             px=px,
             py=py,
             disparity=abs(left.dy - right.dy),
         )
+        if self.model == "eye":
+            return sample
+
+        from . import headpose
+
+        lm = landmark_array(face_landmarks)
+        if landmark_depth is None and depth_m is not None and intrinsics is not None:
+            landmark_depth = headpose.sample_landmark_depth(depth_m, lm, w, h)
+        pose = headpose.estimate(lm, w, h, landmark_depth, intrinsics)
+        if pose is None:
+            return None
+        yaw, pitch = headpose.gaze_angles_deg(pose, dx, dy)
+        if not (math.isfinite(yaw) and math.isfinite(pitch)):
+            return None
+        return dataclasses.replace(
+            sample,
+            dx=yaw,
+            dy=pitch,
+            units="deg",
+            eye_dx=dx,
+            eye_dy=dy,
+            head_deg=pose.angles_deg(),
+            head_method=pose.method,
+        )
+
+
+def landmark_array(face_landmarks) -> np.ndarray:
+    """FaceMesh's landmarks as an ``(N, 3)`` array of normalised x, y, z."""
+    arr = getattr(face_landmarks, "array", None)
+    if arr is not None:
+        return np.asarray(arr, dtype=float)
+    return np.array([(p.x, p.y, p.z) for p in face_landmarks.landmark], dtype=float)
+
+
+def _median_depth(landmark_depth: np.ndarray, indices) -> float:
+    z = np.asarray(landmark_depth, dtype=float)[list(indices)]
+    z = z[np.isfinite(z) & (z > 0)]
+    return float(np.median(z)) if z.size else 0.0
 
 
 def gaze_from_landmarks(

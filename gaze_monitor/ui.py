@@ -96,6 +96,22 @@ def _log_transition(old: AttentionState, new: AttentionState, status) -> None:
     )
 
 
+def _preview_offset(sample):
+    """What the preview draws: the iris offset within the eye.
+
+    The overlay places iris markers from an eye-in-head offset. Under the
+    head model the sample's dx/dy are the line of sight in degrees, so the
+    preview gets the eye offset it carries alongside instead.
+    """
+    if sample is None:
+        return None
+    if sample.units == "deg":
+        if sample.eye_dx is None:
+            return None
+        return (sample.eye_dx, sample.eye_dy)
+    return (sample.dx, sample.dy)
+
+
 def _smooth(sample, filter_x: GazeFilter, filter_y: GazeFilter):
     """Apply the EMA to a raw sample, or return None if it has no state yet."""
     dx = filter_x.apply(sample.dx)
@@ -400,6 +416,17 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     ui = create_ui(config)
 
     record = None if force_calibration else load_calibration(config.calibration_file)
+    units = "deg" if config.gaze_model == "head" else "eye"
+    if record is not None and record.zone.units != units:
+        # The zone's numbers mean different things under the two models, so
+        # reinterpreting them would move the danger zone silently.
+        log.warning(
+            "The stored calibration was made with the %r gaze model and this "
+            "run uses %r. It needs calibrating again.",
+            "head" if record.zone.units == "deg" else "eye",
+            config.gaze_model,
+        )
+        record = None
     if record is not None:
         log.info(
             "Loaded calibration from %s (captured %s from %s)",
@@ -438,12 +465,15 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
     )
     calibrator = GazeCalibrator(
         sample_duration=config.sample_duration,
-        sigma_threshold=config.sigma_threshold,
+        sigma_threshold=(
+            config.sigma_threshold_deg if units == "deg" else config.sigma_threshold
+        ),
+        units=units,
     )
     calibrating = record is None
     filter_x = GazeFilter(alpha=config.filter_alpha)
     filter_y = GazeFilter(alpha=config.filter_alpha)
-    measurer = GazeMeasurer()
+    measurer = GazeMeasurer(model=config.gaze_model)
 
     cam = create_source(
         config.source,
@@ -527,7 +557,11 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                 face_seen = bool(results.multi_face_landmarks)
                 if face_seen:
                     raw = measurer.measure(
-                        results.multi_face_landmarks[0], w, h, captured.depth_m
+                        results.multi_face_landmarks[0],
+                        w,
+                        h,
+                        captured.depth_m,
+                        intrinsics=captured.intrinsics,
                     )
                     if raw is not None:
                         disparity = raw.disparity
@@ -569,7 +603,7 @@ def run_monitor(config: MonitorConfig, force_calibration: bool = False) -> int:
                         # The smoothed estimate, not the raw sample. What the
                         # preview is for is showing what the monitor
                         # believes, and this is that.
-                        None if sample is None else (sample.dx, sample.dy),
+                        _preview_offset(sample),
                     )
 
             camera_ok = failures < FAILURES_BEFORE_UNHEALTHY and not blinded

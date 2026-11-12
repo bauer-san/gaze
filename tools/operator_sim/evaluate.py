@@ -50,8 +50,12 @@ from gaze_monitor.gaze import (  # noqa: E402
     GazeSample,
     depth_at,
 )
+from gaze_monitor.headpose import sample_landmark_depth  # noqa: E402
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+# Format 1 runs lack per-landmark depth; they still load, and replay with
+# head pose falls back to FaceMesh's relative depth for them.
+READABLE_FORMATS = (1, 2)
 DEPTH_WINDOW = 4  # half-size of the stored depth patch, pixels
 LEFT_IRIS, RIGHT_IRIS = 468, 473
 CORNERS = (33, 133, 362, 263)
@@ -72,6 +76,7 @@ class _Landmarks:
 
     def __init__(self, array: np.ndarray):
         self._a = array
+        self.array = array  # the fast path gaze.landmark_array takes
 
     @property
     def landmark(self):
@@ -176,6 +181,10 @@ def generate(
     )
     mp_lm = np.full((n, 478, 3), np.nan, dtype=np.float32)
     truth_lm = np.zeros((n, 478, 2), dtype=np.float32)
+    truth_z = np.zeros((n, 478), dtype=np.float32)
+    # The depth image's reading at each of FaceMesh's landmarks, for head
+    # pose in replay: the full depth image is far too big to keep.
+    mp_depth = np.zeros((n, 478), dtype=np.float16)
     windows = np.zeros(
         (n, 2 * DEPTH_WINDOW + 1, 2 * DEPTH_WINDOW + 1), dtype=np.float32
     )
@@ -198,12 +207,14 @@ def generate(
             res = face_mesh.process(rgb)
             truth = dict(frame.truth)
             truth_lm[i] = np.asarray(truth.pop("landmarks_px"), dtype=np.float32)
+            truth_z[i] = r.landmarks_z
             if res.multi_face_landmarks:
                 lms = res.multi_face_landmarks[0]
                 arr = np.array(
                     [(p.x, p.y, p.z) for p in lms.landmark], dtype=np.float32
                 )
                 mp_lm[i] = arr
+                mp_depth[i] = sample_landmark_depth(r.depth_m, arr, w, h)
                 sample = GazeMeasurer().measure(lms, w, h, r.depth_m)
                 if sample is not None:
                     origins[i] = (sample.px, sample.py)
@@ -241,6 +252,8 @@ def generate(
         out / "arrays.npz",
         mp_landmarks=mp_lm,
         truth_landmarks_px=truth_lm,
+        truth_landmarks_z=truth_z,
+        mp_landmark_depth=mp_depth,
         depth_windows=windows,
         depth_origins=origins,
     )
@@ -293,10 +306,12 @@ def simulate_truth(
     )
     n = sim.frame_count
     truth, lm = [], np.zeros((n, 478, 2), dtype=np.float32)
+    lz = np.zeros((n, 478), dtype=np.float32)
     for _ in range(n):
         frame = sim.truth_state(*sim.next_state())
         tr = dict(frame.truth)
         lm[frame.index] = np.asarray(tr.pop("landmarks_px"), dtype=np.float32)
+        lz[frame.index] = frame.render.landmarks_z
         truth.append(json.loads(json.dumps(tr, default=_json_default)))
     r = 2 * DEPTH_WINDOW + 1
     meta = {
@@ -317,6 +332,7 @@ def simulate_truth(
         truth=truth,
         mp_landmarks=np.full((n, 478, 3), np.nan, dtype=np.float32),
         truth_landmarks_px=lm,
+        truth_landmarks_z=lz,
         depth_windows=np.zeros((n, r, r), dtype=np.float32),
         depth_origins=np.full((n, 2), -1, dtype=np.int32),
     )
@@ -411,6 +427,11 @@ class Params:
     clear_after: float = 0.4
     sample_duration: float = 1.0
     sigma_threshold: float = 0.05
+    # The same, for the head model, whose units are degrees.
+    sigma_threshold_deg: float = 3.0
+    # "head": head pose plus eye-in-head, the line of sight (the default).
+    # "eye": the iris's offset within the eye alone, as before head pose.
+    gaze_model: str = "head"
     # When, into each calibration fixation, the simulated operator presses c.
     calib_press_after: float = 1.0
 
@@ -423,14 +444,32 @@ class Run:
     truth_landmarks_px: np.ndarray
     depth_windows: np.ndarray
     depth_origins: np.ndarray
+    truth_landmarks_z: np.ndarray | None = None
+    mp_landmark_depth: np.ndarray | None = None
+
+    @property
+    def intrinsics(self):
+        from gaze_monitor.headpose import Intrinsics
+
+        k = self.meta.get("intrinsics")
+        return Intrinsics(k["fx"], k["fy"], k["cx"], k["cy"]) if k else None
+
+    def landmark_depth(self, i: int, source: str) -> np.ndarray | None:
+        """Depth at each landmark for frame i: measured, or the truth."""
+        if source == "truth":
+            z = self.truth_landmarks_z
+        else:
+            z = self.mp_landmark_depth
+        return None if z is None else np.asarray(z[i], dtype=float)
 
     @classmethod
     def load(cls, path: str | pathlib.Path) -> Run:
         p = pathlib.Path(path)
         meta = json.loads((p / "meta.json").read_text())
-        if meta.get("format") != FORMAT_VERSION:
+        if meta.get("format") not in READABLE_FORMATS:
             raise ValueError(
-                f"{p} is format {meta.get('format')}, expected {FORMAT_VERSION}"
+                f"{p} is format {meta.get('format')}, expected one of"
+                f" {READABLE_FORMATS}"
             )
         truth = [
             json.loads(line) for line in (p / "truth.jsonl").read_text().splitlines()
@@ -443,6 +482,12 @@ class Run:
             truth_landmarks_px=a["truth_landmarks_px"],
             depth_windows=a["depth_windows"],
             depth_origins=a["depth_origins"],
+            truth_landmarks_z=(
+                a["truth_landmarks_z"] if "truth_landmarks_z" in a else None
+            ),
+            mp_landmark_depth=(
+                a["mp_landmark_depth"] if "mp_landmark_depth" in a else None
+            ),
         )
 
     def depth_image(self, i: int) -> np.ndarray | None:
@@ -481,7 +526,15 @@ def landmarks_for(run: Run, source: str = "mediapipe") -> np.ndarray:
         raise ValueError(f"Unknown landmark source {source!r}")
     w, h = run.meta["width"], run.meta["height"]
     px = run.truth_landmarks_px / np.array([w, h], dtype=np.float32)
-    return np.concatenate([px, np.zeros(px.shape[:2] + (1,), np.float32)], axis=2)
+    # FaceMesh's z is depth relative to the face, in units of the frame
+    # width. From true depth, that is (z - z_face) * fx / z_face / width.
+    z = np.zeros(px.shape[:2] + (1,), np.float32)
+    if run.truth_landmarks_z is not None and run.meta.get("intrinsics"):
+        tz = run.truth_landmarks_z.astype(float)
+        ref = np.median(tz[:, :468], axis=1, keepdims=True)
+        fx = run.meta["intrinsics"]["fx"]
+        z[..., 0] = ((tz - ref) * fx / np.maximum(ref, 1e-6) / w).astype(np.float32)
+    return np.concatenate([px, z], axis=2)
 
 
 def replay(
@@ -492,11 +545,15 @@ def replay(
     w, h = run.meta["width"], run.meta["height"]
     n = len(run.truth)
     all_lm = landmarks_for(run, landmarks)
-    measurer = GazeMeasurer()
+    head = params.gaze_model == "head"
+    measurer = GazeMeasurer(model=params.gaze_model)
+    intrinsics = run.intrinsics
     fx = GazeFilter(alpha=params.filter_alpha)
     fy = GazeFilter(alpha=params.filter_alpha)
     calibrator = GazeCalibrator(
-        sample_duration=params.sample_duration, sigma_threshold=params.sigma_threshold
+        sample_duration=params.sample_duration,
+        sigma_threshold=params.sigma_threshold_deg if head else params.sigma_threshold,
+        units="deg" if head else "eye",
     )
     monitor = None
     oracle = AttentionMonitor(
@@ -533,7 +590,15 @@ def replay(
         raw = sample = None
         if np.isfinite(lm[0, 0]):
             out["face"][i] = True
-            raw = measurer.measure(_Landmarks(lm), w, h, run.depth_image(i))
+            ld = run.landmark_depth(i, landmarks)
+            raw = measurer.measure(
+                _Landmarks(lm),
+                w,
+                h,
+                None if ld is not None else run.depth_image(i),
+                intrinsics=intrinsics,
+                landmark_depth=ld,
+            )
             if raw is not None:
                 out["disparity"][i] = raw.disparity
                 if not (
@@ -872,9 +937,12 @@ def _r(x, nd: int = 3):
 # -- sweeps --------------------------------------------------------------------
 
 
-def parse_grid(items: Iterable[str]) -> dict[str, list[float]]:
+def parse_grid(items: Iterable[str]) -> dict[str, list]:
+    """``name=v1,v2`` items into a grid. Values take their field's type, so
+    ``gaze_model=eye,head`` works as well as ``filter_alpha=0.1,0.2``."""
     grid = {}
-    fields = {f.name for f in dataclasses.fields(Params)}
+    types = {f.name: type(f.default) for f in dataclasses.fields(Params)}
+    fields = set(types)
     for item in items:
         name, _, values = item.partition("=")
         name = name.strip().replace("-", "_")
@@ -882,7 +950,8 @@ def parse_grid(items: Iterable[str]) -> dict[str, list[float]]:
             raise ValueError(
                 f"Unknown parameter {name!r}. Known: {', '.join(sorted(fields))}"
             )
-        grid[name] = [float(v) for v in values.split(",") if v.strip()]
+        cast = str if types[name] is str else float
+        grid[name] = [cast(v.strip()) for v in values.split(",") if v.strip()]
     return grid
 
 

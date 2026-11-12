@@ -225,9 +225,20 @@ filter_alpha: 0.12
 # region to try. gaze_frames_rejected_disparity_total counts what it dropped.
 max_eye_disparity: 0.0
 
+# What gaze is. "head" (the default): the head's pose plus the eye's
+# rotation in the head, the actual line of sight. Head pose comes from the
+# face's landmarks lifted to 3D with the depth camera, or from FaceMesh's
+# own relative depth when there is none. "eye": the iris's offset within the
+# eye alone, which cannot see a head turn with the eyes held still. In the
+# operator simulator the head model missed about a third as many real
+# excursions, with about a third of the false warnings. A calibration made under
+# one model is refused under the other.
+gaze_model: head
+
 # --- calibration ----------------------------------------------------------
 # Commissioning only: the four corners are captured once and reloaded on every
 # start. Redo with --recalibrate, discard with --factory-reset.
 sample_duration: 1.0    # seconds of fixation per corner
-sigma_threshold: 0.05   # reject a corner that wobbles more than this
+sigma_threshold: 0.05   # reject a corner that wobbles more than this (eye model)
+sigma_threshold_deg: 3.0   # the same for the head model, in degrees
 # calibration_file: /var/lib/gaze_monitor/calibration.json

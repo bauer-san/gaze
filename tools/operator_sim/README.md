@@ -186,29 +186,30 @@ The recommended mount, in the drawing's terms:
 Aim at the nose rather than the eyes: that centres the whole face, which
 FaceMesh needs.
 
-### Commission with the head still
+### Commissioning and head movement
 
 From where the operator stands, the zone's bottom corners are as much as 27°
 to either side of their eyes. Asked to "look at each corner", most people
-turn their head for shifts that size, and the pipeline measures the eye
-*in the head*: a head turned during commissioning shrinks the calibrated
-zone. With perfect landmarks, so that only this changes:
+turn their head for shifts that size. The eye model measures the eye *in
+the head*, so a head turned during commissioning shrinks its calibrated
+zone. The head model adds the head's pose and does not care. With perfect
+landmarks, so that only this changes (two seeds each, 40 s):
 
-| Commissioning | Scenario | Gaze error, median | In-zone agreement |
+| Commissioning | Scenario | Eye model: gaze error / in-zone | Head model: gaze error / in-zone |
 | --- | --- | --- | --- |
-| Head held still, eyes only | `eyes-only` | 2.7–3.4° | 89–97% |
-| Natural head movement | `eyes-only` | 20° | 57% |
-| Head held still | `shift` | 2.6–4.0° | 97–98% |
-| Natural head movement | `shift` | 12.5° | 59% |
+| Head held still | `eyes-only` | 2.5–2.8° / 90–98% | 2.8–3.3° / 90–96% |
+| Natural head movement | `eyes-only` | 19° / 60%, other seed failed | 2.9–5.2° / 83–88% |
+| Head held still | `shift` | 1.8–4.1° / 96–97% | 3.0° / 90–97% |
+| Natural head movement | `shift` | 12° / 63%, other seed failed | 1.9–2.8° / 98% |
 
-Two seeds each, 40 s. With natural head movement, one of the two seeds
-never calibrated at all: the calibrator rejected the corners as "too much
-movement", because the head was still turning while the operator held the
-fixation. The rows give the seed that did calibrate.
+"Failed" means the calibrator rejected the corners as "too much movement":
+the head was still turning while the operator held the fixation.
 
-So the instruction at commissioning should be *keep your head still and
-look at each corner with your eyes*. `--calibration-head still` models that
-operator; the default is natural eye–head coordination.
+With the default head model, commissioning no longer depends on the
+operator keeping their head still. With the eye model it does, and the
+instruction has to be *keep your head still and look with your eyes only*.
+`--calibration-head still` models that operator; the default is natural
+eye–head coordination.
 
 ### Mounting it with the articulated suction arm
 
@@ -234,26 +235,35 @@ mount, and at 72 g the camera is far inside the mount's rating.
 
 **How much the mount may move after calibration**, from
 `python -m tools.operator_sim drift`: 90 s of `shift`, commissioned with the
-head still, perfect landmarks so that only the camera changes:
+head still, perfect landmarks so that only the camera changes. The two gaze
+models behave differently here, and it matters for the mount:
 
-| Mount moves after calibration by | Gaze error, median | In-zone agreement | False warnings/min |
-| --- | --- | --- | --- |
-| nothing | 5.40° | 77.2% | 1.28 |
-| tips down 3° | 5.41° | 77.2% | 1.28 |
-| turns 3° | 5.34° | 77.4% | 1.28 |
-| rolls 5° | 5.40° | 77.2% | 1.28 |
-| sags 15 mm | 5.46° | 81.0% | 0.64 |
-| sags 30 mm | 5.56° | 87.2% | 0.64 |
-| slides 15 mm sideways | 5.35° | 75.3% | 1.28 |
+| Mount moves after calibration by | Eye model: zone shift (h, v) | Head model: zone shift (h, v) |
+| --- | --- | --- |
+| tips down 1° | 0.0°, 0.0° | 0.0°, +1.2° |
+| tips down 3° | 0.0°, 0.0° | +0.1°, +3.7° |
+| turns 3° | −0.1°, 0.0° | −2.0°, −0.1° |
+| rolls 5° | 0.0°, 0.0° | +2.5°, −0.5° |
+| sags 15 mm | +0.2°, −0.2° | +0.1°, 0.0° |
+| sags 30 mm | +0.1°, −0.8° | 0.0°, −0.5° |
+| slides 15 mm sideways | +0.2°, 0.0° | 0.0°, +0.1° |
 
-Turning the camera changes nothing measurable. The gaze measurement is the
-iris's position relative to the eye corners, and turning the camera moves
-both together. Moving it changes the viewpoint slightly, which moves
-individual frames across the zone's edge, but not the error. So a ball head
-that creeps does not quietly invalidate the calibration. What does limit it
-is the frame: with only 5–7° of margin, a mount that tips further than that
+(The shift is the change in the mean gaze error's bias, against the mount
+not moving.)
+
+* **Eye model:** turning the camera changes nothing. The measurement is the
+  iris's position relative to the eye corners, and turning the camera moves
+  both together.
+* **Head model:** gaze is measured relative to the camera, so a camera that
+  tips, turns or rolls after calibration shifts the whole zone by about
+  that angle. A sag or slide that does not rotate it barely matters.
+
+So with the head model, **recalibrate after anything that rotates the
+camera by more than a degree or so**: a knock, a re-aim, a ball head that
+creeps. The D435i has an IMU that measures gravity, and folding it in could
+cancel tip and roll automatically; that is a candidate next improvement.
+With either model, a mount that tips further than the frame's 5–7° of margin
 loses the operator's chin or forehead, and FaceMesh loses the face.
-Recalibrate after anyone re-aims the arm. A small droop does not need it.
 
 The **attention zone** runs from the bottom of the upper blade guide down the
 blade to the table, and across the strip of table in front of the teeth:
@@ -283,8 +293,10 @@ Every scenario starts with commissioning: the operator fixates the four zone
 corners in order, and the evaluator "presses c" a second into each
 fixation, pressing again if the calibrator rejects one.
 `--calibration-head still` models an operator who keeps their head still
-while calibrating, as they should (see above). The default is natural
-eye–head coordination, which turns the head for the wider shifts.
+while calibrating, which the eye model needs (see
+[Commissioning and head movement](#commissioning-and-head-movement)). The
+default is natural eye–head coordination, which turns the head for the
+wider shifts.
 
 ## What `evaluate` reports
 
@@ -413,53 +425,66 @@ downstream of FaceMesh costs seconds to evaluate there too.
 for each metric, the mean per-case difference and its 90% interval. Only a
 difference whose interval excludes zero (marked `*`) is worth believing.
 The baselines in [`baselines/`](baselines/) are the pipeline as it is on
-`main`. Re-running unchanged code reproduces them exactly. As a check that
-the benchmark can see a change, a faster filter (`--set filter_alpha=0.3`
-against the default 0.12) adds 33 false warnings an hour [+10, +60] and
-changes nothing else beyond noise.
+`main`, with the default head model (`*-truth.json`), and the eye model for
+comparison (`*-truth-eye.json`). Re-running unchanged code reproduces them
+exactly.
 
-### The baseline, with perfect landmarks
+The benchmark can see a change, and that conclusions depend on the model.
+A faster filter (`--set filter_alpha=0.3` against the default 0.12) added
+33 false warnings an hour [+10, +60] on the eye model. On the head model the
+same change slightly *helps*: in-zone agreement +2.2 points [+1.3, +3.2] and
+gaze error −0.27° [−0.37, −0.19], with no significant change in alarms. So
+re-tune after changing the model, never carry settings across.
 
-`standard` suite, the pipeline as it is on `main`:
+### Results, with perfect landmarks
 
-| | |
-| --- | --- |
-| Missed warnings | 20 of 72 (28%, 90% interval 16–42%) |
-| Missed alerts | 2 of 6 |
-| False warnings per hour | 61 (36–90) |
-| In-zone agreement | 82% |
-| Did not calibrate | 2 of 31, both commissioned naturally |
+`standard` suite, 31 cases. The eye model is the iris's offset within the
+eye; the head model, now the default, adds head pose from the depth camera:
 
-| Operator | Missed warnings | False warnings/hour |
+| | Eye model | Head model |
 | --- | --- | --- |
-| `eye_mover` | 2 of 22 | 33 |
-| `typical` | 5 of 27 | 72 |
-| `head_mover` | **13 of 23** | 67 |
+| Missed warnings | 16 of 72 (22%) | **6 of 80 (7.5%, interval 4–12%)** |
+| Missed alerts | 1 of 6 | **0 of 7** |
+| False warnings per hour | 87 | **32 (17–49)** |
+| In-zone agreement | 80% | **92%** |
+| Gaze error, median | 9.0° | **3.9°** |
+| Did not calibrate | 2 of 31 | **0 of 31** |
 
-| Scenario | Missed warnings | False warnings/hour |
+Paired over the 29 cases both calibrated, the head model has fewer missed
+warnings (−0.38 per case [−0.76, −0.10]), fewer false warnings (−61 an hour
+[−111, −17]) and fewer false alerts (−32 an hour [−64, −3]).
+
+| Head model, by operator | Missed warnings | False warnings/hour |
 | --- | --- | --- |
-| `edges` | 10 of 17 | 22 |
-| `flicker` | none to miss | **275** |
-| `glances` | 3 of 20 | 22 |
-| `shift` | 7 of 35 | 48 |
-| `distance` | none to miss | 120 |
+| `eye_mover` | 1 of 22 | 11 |
+| `typical` | 2 of 35 | 25 |
+| `head_mover` | 3 of 23 | 59 |
+
+| Head model, by scenario | Missed warnings | False warnings/hour |
+| --- | --- | --- |
+| `edges` | 2 of 17 | 0 |
+| `flicker` | none to miss | 0 |
+| `glances` | 0 of 20 | 0 |
+| `shift` | 4 of 43 | 41 |
+| `distance` | none to miss | 90 |
 | `vor` | none to miss | 0 |
 
-All of this is with a perfect landmark detector, so none of it is FaceMesh's
-fault. Three things stand out:
+All of this is with a perfect landmark detector. What the head model fixed,
+and what is left:
 
-* **Operators who look away with their head are missed.** A head mover
-  looks away by turning the head, with the eyes staying near the middle of
-  the head; eye-in-head barely changes, so the monitor believes they are
-  still on the blade. More than half their excursions went unnoticed. This
-  is the safety-critical failure, and the case for head-pose compensation.
-* **Rapid short glances become false alarms.** Each glance in `flicker` is
-  under the grace period and the oracle never warns, but the filter's lag
-  and the 0.4 s it takes to clear smear them into one long absence.
-* **Near the zone's edge, a few degrees of error decide it.** In `edges`,
-  10 of 17 excursions just outside the zone were read as inside.
-
-Mount jitter made no measurable difference, consistent with the drift study.
+* **Operators who look away with their head are no longer missed.** On the
+  eye model, a head mover's excursions went unnoticed half the time (11 of
+  23), with 134 false warnings an hour, because turning the head with the
+  eyes centred barely changes eye-in-head. On the head model, 3 of 23 and
+  59 an hour.
+* **Rapid short glances no longer pile up into false alarms.** `flicker`
+  went from about 350 false warnings an hour to none.
+* **Commissioning no longer depends on holding the head still.** Both
+  calibration failures on the eye model were naturally commissioned cases.
+* **Still to fix:** false warnings in the `shift`, mostly head movers (59
+  an hour), and in `distance` (90 an hour), where stepping back and forth
+  is still read as gaze moving. The distance scaling is a rough
+  approximation, and is the next thing to look at.
 
 ## The promo video
 

@@ -219,7 +219,7 @@ def test_pipeline_on_perfect_landmarks_tracks_the_true_zone():
     run = simulate_truth(
         "eyes-only", duration=15.0, fps=30.0, seed=2, calibration_head="still"
     )
-    rep = score(run, Params(), landmarks="truth", ideal=False)
+    rep = score(run, Params(gaze_model="eye"), landmarks="truth", ideal=False)
     assert rep["calibration_ok"]
     # Not zero: the eyes are as close as 0.4 m to the camera and pinned at
     # their limit for the furthest targets, where the affine fit bends.
@@ -227,6 +227,11 @@ def test_pipeline_on_perfect_landmarks_tracks_the_true_zone():
     assert rep["eye_in_head"]["pitch_resid_rms_deg"] < 1.5
     assert rep["gaze_error"]["median_deg"] < 4.0
     assert rep["in_zone"]["accuracy"] > 0.85
+    # The head model gets the same eyes-only case about as right.
+    head = score(run, Params(gaze_model="head"), landmarks="truth", ideal=False)
+    assert head["calibration_ok"]
+    assert head["gaze_error"]["median_deg"] < 5.0
+    assert head["in_zone"]["accuracy"] > 0.85
 
 
 def test_vor_is_where_eye_in_head_stops_being_gaze():
@@ -234,17 +239,21 @@ def test_vor_is_where_eye_in_head_stops_being_gaze():
     measurement has it wandering as the head turns, even with perfect
     landmarks: more than twice the error of the same eyes with the head
     held still. A property of the method, pinned here so it is noticed if
-    the pipeline ever starts compensating for head pose."""
+    the eye model ever changes. The head model, which adds head pose,
+    should take most of that error away."""
     still = simulate_truth(
         "eyes-only", duration=15.0, fps=30.0, seed=3, calibration_head="still"
     )
     vor = simulate_truth(
         "vor", duration=15.0, fps=30.0, seed=3, calibration_head="still"
     )
-    s = score(still, Params(), landmarks="truth", ideal=False)
-    v = score(vor, Params(), landmarks="truth", ideal=False)
+    eye = Params(gaze_model="eye")
+    s = score(still, eye, landmarks="truth", ideal=False)
+    v = score(vor, eye, landmarks="truth", ideal=False)
     assert v["calibration_ok"]
     assert v["gaze_error"]["median_deg"] > 2 * s["gaze_error"]["median_deg"]
+    h = score(vor, Params(gaze_model="head"), landmarks="truth", ideal=False)
+    assert h["gaze_error"]["median_deg"] < 0.5 * v["gaze_error"]["median_deg"]
 
 
 # -- camera placement -------------------------------------------------------------
@@ -276,9 +285,9 @@ def test_placement_prefers_a_camera_in_line_with_the_operator():
 
 
 def test_calibration_tolerates_a_mount_that_creeps():
-    """Turning the camera moves the iris and the eye corners together, so a
-    ball head that creeps after commissioning does not move the zone; only
-    a change of viewpoint does, and slightly."""
+    """Eye model: turning the camera moves the iris and the eye corners
+    together, so a ball head that creeps after commissioning does not move
+    the zone; only a change of viewpoint does, and slightly."""
     from tools.operator_sim.placement import drift_study
 
     drifts = {
@@ -287,11 +296,38 @@ def test_calibration_tolerates_a_mount_that_creeps():
         "sags": ((0.0, -0.015, 0.0), (0.0, 0.0, 0.0)),
     }
     rows = {
-        r["drift"]: r for r in drift_study(drifts, scenario="eyes-only", duration=8.0)
+        r["drift"]: r
+        for r in drift_study(
+            drifts, scenario="eyes-only", duration=8.0, params=Params(gaze_model="eye")
+        )
     }
     base = rows["none"]["gaze_median_deg"]
     assert abs(rows["tips"]["gaze_median_deg"] - base) < 0.3
     assert abs(rows["sags"]["gaze_median_deg"] - base) < 0.8
+
+
+def test_head_model_zone_moves_with_a_camera_that_tips():
+    """Head model: gaze is measured in the camera's frame, so a camera that
+    tips after commissioning shifts the zone by the tip. A sag without a
+    tip does not. This is why the checklist asks for recalibration after
+    the camera rotates, and it is the property an IMU correction would
+    remove."""
+    from tools.operator_sim.placement import drift_study
+
+    drifts = {
+        "none": ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        "tips": ((0.0, 0.0, 0.0), (0.0, 3.0, 0.0)),
+        "sags": ((0.0, -0.015, 0.0), (0.0, 0.0, 0.0)),
+    }
+    rows = {
+        r["drift"]: r
+        for r in drift_study(
+            drifts, scenario="eyes-only", duration=8.0, params=Params(gaze_model="head")
+        )
+    }
+    dy = {k: v["bias_deg"][1] for k, v in rows.items()}
+    assert abs(dy["tips"] - dy["none"]) > 2.0
+    assert abs(dy["sags"] - dy["none"]) < 1.0
 
 
 # -- benchmark -------------------------------------------------------------------

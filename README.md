@@ -161,9 +161,23 @@ distance it was calibrated at. Step back a metre and the operator looking
 straight at the blade reads as looking well outside it.
 
 A depth camera fixes this: the measured distance scales the zone, so it holds
-as the operator moves. Everything else in the system works without depth, and
-the code treats a missing depth reading as "compensation off" rather than as
-an error.
+as the operator moves.
+
+It also gives the **head's pose**. The iris's offset within the eye is the
+eye's rotation *in the head*, which is gaze only while the head holds still:
+an operator who looks away by turning their head, eyes centred, barely moves
+it. So the monitor lifts the rigid parts of the face (forehead, nose,
+cheekbones, eye corners) into 3D with the depth image, fits a face model to
+them for the head's orientation, and adds the eye's rotation to get the
+actual line of sight (`gaze_model: head`, the default; see
+[`headpose.py`](gaze_monitor/headpose.py)). In the
+[operator simulator](tools/operator_sim/README.md#benchmarking) this missed
+about a third as many real excursions, with about a third of the false
+warnings, of the iris alone.
+
+Everything works without depth. Head pose then falls back to FaceMesh's own
+relative depth, which is noisier, and a missing distance reading means
+"distance compensation off" rather than an error.
 
 ## Bill of materials
 
@@ -308,12 +322,13 @@ The reasoning and the numbers behind each step are in the
 
 7. The person who will run the saw does the calibration, from that same
    working position.
-8. Tell them: **keep your head still, and look at each corner with your
-   eyes only.** This matters as much as anything else on this list. From
-   the working position the zone's near corners are well off to the side,
-   people naturally turn their head towards them, and the monitor measures
-   the eye *within the head*. In simulation, a head turned during
-   calibration tripled the gaze error and quadrupled the false alarms.
+8. Tell them: **look at each corner and hold still until it is accepted.**
+   With the default head model, turning the head towards a corner is fine:
+   the monitor adds the head's pose to the eyes. With `gaze_model: eye` it
+   is not, because that model measures the eye *within the head*. There,
+   tell them to keep their head still and use their eyes only; in
+   simulation a head turned during calibration tripled the gaze error and
+   quadrupled the false alarms.
 9. Corners in order: top-left, top-right, bottom-left, bottom-right of the
    blade zone. If a corner is rejected ("too much movement"), settle and
    press `c` again.
@@ -326,8 +341,11 @@ The reasoning and the numbers behind each step are in the
 
 **Recalibrate when**
 
-- the camera is re-aimed, remounted, or knocked. A small sag in the mount
-  does not need it; anything that changes the framing does;
+- the camera is re-aimed, remounted, or knocked. With the head model,
+  gaze is measured relative to the camera, so a camera that **tips or
+  turns** after calibration shifts the zone by about the same angle:
+  recalibrate after anything that rotates it more than a degree or so. A
+  sag that moves it without rotating it does not matter;
 - a different operator takes over. Whether one calibration serves people
   of different heights has not been measured yet, so assume it does not;
 - the guide or the zone the operator must watch changes.
@@ -396,6 +414,7 @@ The thresholds worth thinking about for a given installation:
 | `clear_after` | 0.4 s | Time back on target before an alarm clears |
 | `fault_after` | 1.0 s | Unusable frames before declaring a sensor fault |
 | `zone_margin` | 0.1 | Tolerance around the calibrated area |
+| `gaze_model` | head | `head`: head pose plus the eye's rotation; `eye`: the iris alone |
 | `max_eye_disparity` | 0.0 (off) | Reject frames where the two eyes disagree |
 | `filter_alpha` | 0.12 | Gaze smoothing — **per frame, not per second** |
 
@@ -428,6 +447,7 @@ live, or scrape `gaze_frame_rate_fps`.
 | [`capture.py`](gaze_monitor/capture.py) | Camera backends. Normalises all depth to **metres** at the source. |
 | [`config.py`](gaze_monitor/config.py) | Defaults, YAML loading, CLI merge, validation |
 | [`gaze.py`](gaze_monitor/gaze.py) | Iris geometry and smoothing |
+| [`headpose.py`](gaze_monitor/headpose.py) | Head pose from the landmarks and depth; gaze as head pose plus eye |
 | [`metrics.py`](gaze_monitor/metrics.py) | Prometheus exporter. Inert unless a port is set |
 | [`quality.py`](gaze_monitor/quality.py) | Whether a frame is usable — catches a blocked lens |
 | [`terminal.py`](gaze_monitor/terminal.py) | The `--tui` annunciator, for running over ssh |

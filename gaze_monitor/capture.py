@@ -58,6 +58,10 @@ class UnknownSourceError(CameraError):
 class Frame:
     color: np.ndarray
     depth_m: np.ndarray | None = None
+    # Pinhole intrinsics of ``color`` (gaze_monitor.headpose.Intrinsics), for
+    # lifting landmarks to 3D with the depth. None where the camera has no
+    # depth or does not report them; head pose then uses FaceMesh's own.
+    intrinsics: object | None = None
 
     @property
     def size(self) -> tuple[int, int]:
@@ -155,6 +159,7 @@ class RealSenseSource(CameraSource):
         self.pipeline = None
         self.align = None
         self.depth_scale = 0.001
+        self._intrinsics = None
 
     def start(self) -> None:
         rs = self._rs()
@@ -333,10 +338,37 @@ class RealSenseSource(CameraSource):
         color = np.asanyarray(color_frame.get_data())
         depth_raw = np.asanyarray(depth_frame.get_data())
         depth_m = depth_raw.astype(np.float32) * self.depth_scale
-        return Frame(color=color, depth_m=depth_m)
+        if self._intrinsics is None:
+            self._intrinsics = _color_intrinsics(color_frame)
+        return Frame(color=color, depth_m=depth_m, intrinsics=self._intrinsics)
 
     def stop(self) -> None:
         self._close_pipeline()
+
+
+def _color_intrinsics(color_frame):
+    """The colour stream's pinhole intrinsics, as the device reports them.
+
+    Depth is aligned to colour, so these are the intrinsics both images
+    share. None if the SDK will not give them, which only costs head pose
+    its depth path.
+    """
+    from .headpose import Intrinsics
+
+    try:
+        k = color_frame.profile.as_video_stream_profile().get_intrinsics()
+    except (AttributeError, RuntimeError):  # pragma: no cover - SDK dependent
+        return None
+    return Intrinsics(float(k.fx), float(k.fy), float(k.ppx), float(k.ppy))
+
+
+def _kinect_intrinsics():
+    from .headpose import Intrinsics
+
+    # The Kinect v1's RGB camera at 640x480, which DEPTH_REGISTERED is
+    # aligned to: the widely used factory-typical values. Close enough for
+    # lifting a face to 3D; head pose is not sensitive to a few pixels here.
+    return Intrinsics(525.0, 525.0, 319.5, 239.5)
 
 
 class KinectSource(CameraSource):
@@ -378,7 +410,11 @@ class KinectSource(CameraSource):
         depth_m = depth_mm.astype(np.float32) * _KINECT_MM_TO_M
         # libfreenect reports unknown depth as 0; keep that convention.
         depth_m[depth_mm == 0] = 0.0
-        return Frame(color=cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), depth_m=depth_m)
+        return Frame(
+            color=cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
+            depth_m=depth_m,
+            intrinsics=_kinect_intrinsics(),
+        )
 
     def stop(self) -> None:
         if self._freenect is not None:

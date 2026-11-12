@@ -125,6 +125,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     camera_or_gaze = parser.add_argument_group("gaze")
     camera_or_gaze.add_argument(
+        "--gaze-model",
+        choices=("head", "eye"),
+        default=None,
+        help=(
+            "head (default): head pose plus the eye's rotation in the head, "
+            "using the depth camera for head pose. eye: the iris's offset "
+            "within the eye only. Changing it needs a new calibration."
+        ),
+    )
+    camera_or_gaze.add_argument(
         "--max-eye-disparity",
         type=float,
         default=None,
@@ -342,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
                 "debug",
                 "filter_alpha",
                 "max_eye_disparity",
+                "gaze_model",
                 "warn_after",
                 "alert_after",
                 "clear_after",

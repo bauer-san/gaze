@@ -149,6 +149,9 @@ class GazeCalibrator:
     sample_duration: float = 1.0
     sigma_threshold: float = 0.05
     min_samples: int = 5
+    # Units of the samples, and so of the zone built from them: "eye" or
+    # "deg". sigma_threshold is in the same units.
+    units: str = "eye"
 
     is_collecting: bool = field(default=False, init=False)
     start_time: float = field(default=0.0, init=False)
@@ -234,7 +237,7 @@ class GazeCalibrator:
                 f"Need {len(CORNER_NAMES)} corners, have {len(self.corners)}"
             )
         return AttentionZone.from_corners(
-            self.corners, calib_z=self.calib_z, margin=margin
+            self.corners, calib_z=self.calib_z, margin=margin, units=self.units
         )
 
     def build_record(

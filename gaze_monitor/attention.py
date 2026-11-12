@@ -69,6 +69,11 @@ class AttentionZone:
     dy_max: float
     calib_z: float = 0.0
     margin: float = 0.1
+    # What dx and dy are: "eye", the iris's offset within the eye, or
+    # "deg", the line of sight in degrees with head pose included. See
+    # gaze_monitor.gaze.GAZE_MODELS. A zone is only valid for samples in its
+    # own units.
+    units: str = "eye"
 
     def __post_init__(self) -> None:
         if abs(self.dx_max - self.dx_min) < MIN_ZONE_SPAN:
@@ -77,6 +82,8 @@ class AttentionZone:
             raise ValueError("Degenerate attention zone: vertical span is ~0")
         if self.margin < 0.0:
             raise ValueError("margin must be >= 0")
+        if self.units not in ("eye", "deg"):
+            raise ValueError(f"units must be 'eye' or 'deg', got {self.units!r}")
 
     @classmethod
     def from_corners(
@@ -84,6 +91,7 @@ class AttentionZone:
         corners: Sequence[tuple[float, float]],
         calib_z: float = 0.0,
         margin: float = 0.1,
+        units: str = "eye",
     ) -> AttentionZone:
         """Build a zone from four corners in CORNER_NAMES order."""
         if len(corners) != 4:
@@ -96,6 +104,7 @@ class AttentionZone:
             dy_max=(bl[1] + br[1]) / 2.0,
             calib_z=calib_z,
             margin=margin,
+            units=units,
         )
 
     def project(self, dx: float, dy: float, z_m: float = 0.0) -> tuple[float, float]:
@@ -112,6 +121,15 @@ class AttentionZone:
         scale = 1.0
         if self.calib_z > 0.0 and z_m > 0.0:
             scale = z_m / self.calib_z
+        if self.units == "deg":
+            # The line of sight is an absolute direction. Distance changes
+            # how wide the zone looks from the eyes, about its own centre,
+            # not about the camera's axis.
+            cx = (self.dx_min + self.dx_max) / 2.0
+            cy = (self.dy_min + self.dy_max) / 2.0
+            dx = cx + (dx - cx) * scale
+            dy = cy + (dy - cy) * scale
+            scale = 1.0
         u = (dx * scale - self.dx_min) / (self.dx_max - self.dx_min)
         v = (dy * scale - self.dy_min) / (self.dy_max - self.dy_min)
         return u, v
@@ -132,6 +150,7 @@ class AttentionZone:
             "dy_max": self.dy_max,
             "calib_z": self.calib_z,
             "margin": self.margin,
+            "units": self.units,
         }
 
     @classmethod
@@ -144,6 +163,8 @@ class AttentionZone:
                 dy_max=float(data["dy_max"]),
                 calib_z=float(data.get("calib_z", 0.0)),
                 margin=float(data.get("margin", 0.1)),
+                # Records from before head pose are eye-in-head.
+                units=str(data.get("units", "eye")),
             )
         except (KeyError, TypeError) as exc:
             raise ValueError(f"Malformed attention zone: {exc}") from exc

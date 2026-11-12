@@ -283,6 +283,7 @@ def drift_study(
     duration: float = 60.0,
     seed: int = 0,
     calibration_head: str = "still",
+    params=None,
 ) -> list[dict]:
     """Calibrate with the camera where it was set up, then monitor with it moved.
 
@@ -320,10 +321,16 @@ def drift_study(
             ],
             mp_landmarks=base.mp_landmarks,
             truth_landmarks_px=lm,
+            # The depth at each landmark comes from the same camera as the
+            # landmarks. Leaving it out silently drops head pose to its
+            # no-depth fallback for the whole run.
+            truth_landmarks_z=np.where(
+                calib[:, None], base.truth_landmarks_z, moved.truth_landmarks_z
+            ),
             depth_windows=base.depth_windows,
             depth_origins=base.depth_origins,
         )
-        rep = score(run, landmarks="truth", ideal=False)
+        rep = score(run, params, landmarks="truth", ideal=False)
         g = rep.get("gaze_error") or {}
         ev = (rep.get("events") or {}).get("warning", {})
         rows.append(
