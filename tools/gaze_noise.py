@@ -184,7 +184,7 @@ def pct(series, q):
 
 
 def capture(args):
-    url = args.url.rstrip("/") + "/landmarks"
+    url = args.url.rstrip("/") + "/landmarks.json"
     seen = set()
     kept = 0
     deadline = time.monotonic() + args.seconds

@@ -522,7 +522,10 @@ The cause is MediaPipe's iris, not the head pose:
   right correction ranges from 0.4 to 2.2 between faces and lighting.
 
 Whether real eyes do better than rendered ones is the open question, and
-only a recording from the real camera can answer it. Until then `eye` is
+only a recording from the real camera can answer it.
+[`tools/iris_gain.py`](../iris_gain.py) is that recording: a guided capture
+of nine marks with the head still, and an analysis that reports the iris's
+gain on each axis with a verdict. Until then `eye` is
 the default. Baselines: `facemesh-mediapipe*.json`,
 `facemesh-natural-mediapipe*.json`.
 
